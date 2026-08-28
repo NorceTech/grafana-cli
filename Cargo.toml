@@ -4,3 +4,13 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+
+[profile.dev]
+incremental = true
+opt-level = 0
+debug = "line-tables-only"
+
+[profile.release]
+incremental = false
+opt-level = 3
+debug = false

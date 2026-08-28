@@ -58,9 +58,7 @@
                 cargo-deny
                 cargo-edit
                 cargo-udeps
-                gdb
-                minicom
-                usbutils
+                cargo-wizard
               ]
               ++ config.pre-commit.settings.enabledPackages;
 
