@@ -1,5 +1,0 @@
-$ gcli traces get abc123
---- stdout ---
-{"extraTempoField":{"nested":[1,2,3]},"spans":[{"durationNanos":1500000,"name":"GET /cart","resource":{"service.name":"checkout"}},{"durationNanos":2500000,"name":"SELECT items","resource":{"service.name":"cart"}}],"traceID":"abc123"}
---- stderr ---
---- exit: 0 ---

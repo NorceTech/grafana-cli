@@ -1,6 +1,0 @@
-$ gcli --profile a,b health
---- stdout ---
-{"data":{"commit":"c1","database":"ok","version":"11.4.0"},"profile":"a"}
---- stderr ---
-{"error":{"kind":"http","message":"boom","profile":"b","status":500}}
---- exit: 0 ---

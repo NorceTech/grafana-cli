@@ -1,8 +1,0 @@
-$ gcli logs search '{job=~"api|web"}' --from 2026-08-28T14:00:00Z --to 2026-08-28T15:00:00Z
---- stdout ---
-{"profile":"p","datasource":"Loki","ts":"2026-08-28T14:00:10.000Z","labels":{"job":"web"},"line":"web one"}
-{"profile":"p","datasource":"Loki","ts":"2026-08-28T14:05:00.000Z","labels":{"job":"api"},"line":"api two"}
-{"profile":"p","datasource":"Loki","ts":"2026-08-28T14:20:30.250Z","labels":{"job":"web"},"line":"web three"}
-{"profile":"p","datasource":"Loki","ts":"2026-08-28T14:59:00.000Z","labels":{"job":"api"},"line":"api boom"}
---- stderr ---
---- exit: 0 ---

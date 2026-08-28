@@ -1,5 +1,0 @@
-$ gcli logs labels --from 2026-08-28T14:00:00Z --to 2026-08-28T15:00:00Z
---- stdout ---
-["app","level"]
---- stderr ---
---- exit: 0 ---

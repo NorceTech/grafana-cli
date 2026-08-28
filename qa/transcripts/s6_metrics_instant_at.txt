@@ -1,5 +1,0 @@
-$ gcli metrics instant up --at 2026-08-28T15:00:00Z
---- stdout ---
-[{"metric":{"__name__":"up","job":"node"},"ts":1759372800,"value":"1"}]
---- stderr ---
---- exit: 0 ---

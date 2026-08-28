@@ -1,5 +1,0 @@
-$ gcli datasources
---- stdout ---
-[{"isDefault":true,"name":"Loki main","type":"loki","uid":"u-loki","url":"http://loki"},{"isDefault":false,"name":"Prom","type":"prometheus","uid":"u-prom","url":"http://prom"},{"isDefault":false,"name":"Tempo","type":"tempo","uid":"u-tempo","url":"http://tempo"}]
---- stderr ---
---- exit: 0 ---

@@ -1,5 +1,0 @@
-$ gcli health (expired cache)
---- stdout ---
-{"commit":"c1","database":"ok","version":"11.4.0"}
---- stderr ---
---- exit: 0 ---

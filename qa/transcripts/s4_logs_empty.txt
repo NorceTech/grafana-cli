@@ -1,4 +1,0 @@
-$ gcli logs search '{job="nope"}' --from 2026-08-28T14:00:00Z --to 2026-08-28T15:00:00Z
---- stdout ---
---- stderr ---
---- exit: 0 ---

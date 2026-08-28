@@ -1,5 +1,0 @@
-$ gcli datasources --type loki
---- stdout ---
-[{"isDefault":true,"name":"Loki main","type":"loki","uid":"u-loki","url":"http://loki"}]
---- stderr ---
---- exit: 0 ---

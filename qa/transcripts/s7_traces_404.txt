@@ -1,5 +1,0 @@
-$ gcli traces get missing1
---- stdout ---
---- stderr ---
-{"error":{"kind":"http","message":"trace not found","profile":"p","status":404}}
---- exit: 1 ---

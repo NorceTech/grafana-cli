@@ -1,5 +1,0 @@
-$ gcli profile list (after profile use secondary)
---- stdout ---
-[{"auth":"token","current":false,"name":"primary","url":"http://x"},{"auth":"token","current":true,"name":"secondary","url":"http://y"}]
---- stderr ---
---- exit: 0 ---
