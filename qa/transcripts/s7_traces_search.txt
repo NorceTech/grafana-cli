@@ -1,0 +1,5 @@
+$ gcli traces search '{ resource.service.name = "checkout" }' --from 2026-08-28T14:00:00Z --to 2026-08-28T15:00:00Z --limit 5
+--- stdout ---
+[{"durationMs":42,"rootServiceName":"checkout","rootTraceName":"GET /cart","start":"2025-10-02T02:40:00.000Z","traceID":"t1"},{"durationMs":"7","rootServiceName":"api","rootTraceName":"POST /order","start":"2025-10-02T02:40:00.500Z","traceID":"t2"}]
+--- stderr ---
+--- exit: 0 ---

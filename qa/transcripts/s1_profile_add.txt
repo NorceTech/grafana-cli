@@ -1,0 +1,5 @@
+$ gcli profile add primary --url http://x --token glsa_t
+--- stdout ---
+{"action":"add","auth":"token","profile":"primary"}
+--- stderr ---
+--- exit: 0 ---

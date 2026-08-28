@@ -1,0 +1,5 @@
+$ gcli logs search '{broken' --from 2026-08-28T14:00:00Z --to 2026-08-28T15:00:00Z
+--- stdout ---
+--- stderr ---
+{"error":{"kind":"http","message":"parse error: bad LogQL","profile":"p","status":400}}
+--- exit: 1 ---

@@ -1,0 +1,5 @@
+$ gcli profile use missing
+--- stdout ---
+--- stderr ---
+{"error":{"kind":"config","message":"config error: profile 'missing' not found; available: primary, secondary","profile":null,"status":null}}
+--- exit: 2 ---

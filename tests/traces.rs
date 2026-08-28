@@ -1,0 +1,178 @@
+mod common;
+
+use common::*;
+use serde_json::{Value, json};
+use wiremock::matchers::{method, path, query_param};
+use wiremock::{Mock, MockServer, ResponseTemplate};
+
+const FROM: &str = "2026-08-28T14:00:00Z";
+const TO: &str = "2026-08-28T15:00:00Z";
+const TRACEQL: &str = "{ resource.service.name = \"checkout\" }";
+
+fn epoch_secs(rfc3339: &str) -> String {
+    let dt = chrono::DateTime::parse_from_rfc3339(rfc3339)
+        .unwrap()
+        .with_timezone(&chrono::Utc);
+    format!("{}", gcli_lib::timeutil::to_epoch_secs(dt))
+}
+
+fn config(base: &str) -> tempfile::TempDir {
+    fixture_config(&format!(
+        "current_profile = \"p\"\n\
+         [profiles.p]\n\
+         url = \"{base}\"\n\
+         token = \"t\"\n"
+    ))
+}
+
+fn ds_mock() -> Mock {
+    datasources_json(json!([
+        {"id": 1, "uid": "tempo1", "name": "Tempo", "type": "tempo",
+         "url": "/tempo", "isDefault": true},
+        {"id": 2, "uid": "prom1", "name": "Prom", "type": "prometheus",
+         "url": "/prom", "isDefault": false}
+    ]))
+}
+
+fn trace_body() -> Value {
+    json!({
+        "traceID": "abc123",
+        "spans": [
+            {"resource": {"service.name": "checkout"}, "name": "GET /cart",
+             "durationNanos": 1500000},
+            {"resource": {"service.name": "cart"}, "name": "SELECT items",
+             "durationNanos": 2500000}
+        ],
+        "extraTempoField": {"nested": [1, 2, 3]}
+    })
+}
+
+fn search_body() -> Value {
+    json!({
+        "traces": [
+            {
+                "traceID": "t1",
+                "rootServiceName": "checkout",
+                "rootTraceName": "GET /cart",
+                "startTimeUnixNano": "1759372800000000000",
+                "durationMs": 42
+            },
+            {
+                "traceID": "t2",
+                "rootServiceName": "api",
+                "rootTraceName": "POST /order",
+                "startTimeUnixNano": "1759372800500000000",
+                "durationMs": "7"
+            }
+        ],
+        "metrics": {"inspectedTraces": 2}
+    })
+}
+
+fn expected_search_records() -> Value {
+    json!([
+        {"traceID": "t1", "rootServiceName": "checkout", "rootTraceName": "GET /cart",
+         "durationMs": 42, "start": "2025-10-02T02:40:00.000Z"},
+        {"traceID": "t2", "rootServiceName": "api", "rootTraceName": "POST /order",
+         "durationMs": "7", "start": "2025-10-02T02:40:00.500Z"}
+    ])
+}
+
+fn assert_success(out: &std::process::Output) -> String {
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "exit={:?} stderr={}",
+        out.status.code(),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    stdout.into_owned()
+}
+
+#[tokio::test]
+async fn s7_traces_get() {
+    let server = MockServer::start().await;
+    ds_mock().mount(&server).await;
+    let body = trace_body();
+    Mock::given(method("GET"))
+        .and(path("/api/datasources/proxy/uid/tempo1/api/traces/abc123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(body.clone()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let cfg = config(&server.uri());
+    let env = ("GCLI_CONFIG_DIR", cfg.path().to_str().unwrap());
+    let out = spawn_gcli(&["traces", "get", "abc123"], &[env]);
+
+    let stdout = assert_success(&out);
+    // lossless passthrough: stdout must equal the response body semantically
+    let got: Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(got, body, "{stdout}");
+    server.verify().await;
+    write_transcript("s7_traces_get.txt", "gcli traces get abc123", &out);
+}
+
+#[tokio::test]
+async fn s7_traces_search() {
+    let (start, end) = (epoch_secs(FROM), epoch_secs(TO));
+
+    let server = MockServer::start().await;
+    ds_mock().mount(&server).await;
+    Mock::given(method("GET"))
+        .and(path("/api/datasources/proxy/uid/tempo1/api/search"))
+        // q compared after percent-decoding: exact TraceQL string
+        .and(query_param("q", TRACEQL))
+        .and(query_param("start", start.as_str()))
+        .and(query_param("end", end.as_str()))
+        .and(query_param("limit", "5"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(search_body()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let cfg = config(&server.uri());
+    let env = ("GCLI_CONFIG_DIR", cfg.path().to_str().unwrap());
+    let out = spawn_gcli(
+        &[
+            "traces", "search", TRACEQL, "--from", FROM, "--to", TO, "--limit", "5",
+        ],
+        &[env],
+    );
+
+    let stdout = assert_success(&out);
+    let records: Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(records, expected_search_records(), "{stdout}");
+    server.verify().await;
+    write_transcript(
+        "s7_traces_search.txt",
+        "gcli traces search '{ resource.service.name = \"checkout\" }' --from 2026-08-28T14:00:00Z --to 2026-08-28T15:00:00Z --limit 5",
+        &out,
+    );
+}
+
+#[tokio::test]
+async fn s7_traces_404() {
+    let server = MockServer::start().await;
+    ds_mock().mount(&server).await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/api/datasources/proxy/uid/tempo1/api/traces/missing1",
+        ))
+        .respond_with(
+            ResponseTemplate::new(404).set_body_json(json!({"message": "trace not found"})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let cfg = config(&server.uri());
+    let env = ("GCLI_CONFIG_DIR", cfg.path().to_str().unwrap());
+    let out = spawn_gcli(&["traces", "get", "missing1"], &[env]);
+
+    assert_eq!(out.status.code(), Some(1), "expected exit 1");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("trace not found"), "{stderr}");
+    server.verify().await;
+    write_transcript("s7_traces_404.txt", "gcli traces get missing1", &out);
+}

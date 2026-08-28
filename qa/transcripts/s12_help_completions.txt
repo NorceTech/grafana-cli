@@ -1,0 +1,3077 @@
+$ gcli --help
+--- stdout ---
+Query Grafana logs, metrics and traces
+
+Usage: gcli [OPTIONS] <COMMAND>
+
+Commands:
+  profile      
+  health       
+  datasources  
+  logs         
+  metrics      
+  traces       
+  completions  
+  help         Print this message or the help of the given subcommand(s)
+
+Options:
+      --profile <NAMES>      Comma-separated profile names
+      --all-profiles         
+      --output <OUTPUT>      [possible values: json, table]
+      --url <URL>            
+      --token <TOKEN>        
+      --username <USERNAME>  
+      --password <PASSWORD>  
+  -h, --help                 Print help
+  -V, --version              Print version
+--- stderr ---
+--- exit: 0 ---
+$ gcli completions bash
+--- stdout ---
+_gcli() {
+    local i cur prev opts cmd
+    COMPREPLY=()
+    if [[ "${BASH_VERSINFO[0]}" -ge 4 ]]; then
+        cur="$2"
+    else
+        cur="${COMP_WORDS[COMP_CWORD]}"
+    fi
+    prev="$3"
+    cmd=""
+    opts=""
+
+    for i in "${COMP_WORDS[@]:0:COMP_CWORD}"
+    do
+        case "${cmd},${i}" in
+            ",$1")
+                cmd="gcli"
+                ;;
+            gcli,completions)
+                cmd="gcli__subcmd__completions"
+                ;;
+            gcli,datasources)
+                cmd="gcli__subcmd__datasources"
+                ;;
+            gcli,health)
+                cmd="gcli__subcmd__health"
+                ;;
+            gcli,help)
+                cmd="gcli__subcmd__help"
+                ;;
+            gcli,logs)
+                cmd="gcli__subcmd__logs"
+                ;;
+            gcli,metrics)
+                cmd="gcli__subcmd__metrics"
+                ;;
+            gcli,profile)
+                cmd="gcli__subcmd__profile"
+                ;;
+            gcli,traces)
+                cmd="gcli__subcmd__traces"
+                ;;
+            gcli__subcmd__help,completions)
+                cmd="gcli__subcmd__help__subcmd__completions"
+                ;;
+            gcli__subcmd__help,datasources)
+                cmd="gcli__subcmd__help__subcmd__datasources"
+                ;;
+            gcli__subcmd__help,health)
+                cmd="gcli__subcmd__help__subcmd__health"
+                ;;
+            gcli__subcmd__help,help)
+                cmd="gcli__subcmd__help__subcmd__help"
+                ;;
+            gcli__subcmd__help,logs)
+                cmd="gcli__subcmd__help__subcmd__logs"
+                ;;
+            gcli__subcmd__help,metrics)
+                cmd="gcli__subcmd__help__subcmd__metrics"
+                ;;
+            gcli__subcmd__help,profile)
+                cmd="gcli__subcmd__help__subcmd__profile"
+                ;;
+            gcli__subcmd__help,traces)
+                cmd="gcli__subcmd__help__subcmd__traces"
+                ;;
+            gcli__subcmd__help__subcmd__logs,label-values)
+                cmd="gcli__subcmd__help__subcmd__logs__subcmd__label__subcmd__values"
+                ;;
+            gcli__subcmd__help__subcmd__logs,labels)
+                cmd="gcli__subcmd__help__subcmd__logs__subcmd__labels"
+                ;;
+            gcli__subcmd__help__subcmd__logs,search)
+                cmd="gcli__subcmd__help__subcmd__logs__subcmd__search"
+                ;;
+            gcli__subcmd__help__subcmd__metrics,instant)
+                cmd="gcli__subcmd__help__subcmd__metrics__subcmd__instant"
+                ;;
+            gcli__subcmd__help__subcmd__metrics,range)
+                cmd="gcli__subcmd__help__subcmd__metrics__subcmd__range"
+                ;;
+            gcli__subcmd__help__subcmd__profile,add)
+                cmd="gcli__subcmd__help__subcmd__profile__subcmd__add"
+                ;;
+            gcli__subcmd__help__subcmd__profile,list)
+                cmd="gcli__subcmd__help__subcmd__profile__subcmd__list"
+                ;;
+            gcli__subcmd__help__subcmd__profile,remove)
+                cmd="gcli__subcmd__help__subcmd__profile__subcmd__remove"
+                ;;
+            gcli__subcmd__help__subcmd__profile,set-token)
+                cmd="gcli__subcmd__help__subcmd__profile__subcmd__set__subcmd__token"
+                ;;
+            gcli__subcmd__help__subcmd__profile,use)
+                cmd="gcli__subcmd__help__subcmd__profile__subcmd__use"
+                ;;
+            gcli__subcmd__help__subcmd__traces,get)
+                cmd="gcli__subcmd__help__subcmd__traces__subcmd__get"
+                ;;
+            gcli__subcmd__help__subcmd__traces,search)
+                cmd="gcli__subcmd__help__subcmd__traces__subcmd__search"
+                ;;
+            gcli__subcmd__logs,help)
+                cmd="gcli__subcmd__logs__subcmd__help"
+                ;;
+            gcli__subcmd__logs,label-values)
+                cmd="gcli__subcmd__logs__subcmd__label__subcmd__values"
+                ;;
+            gcli__subcmd__logs,labels)
+                cmd="gcli__subcmd__logs__subcmd__labels"
+                ;;
+            gcli__subcmd__logs,search)
+                cmd="gcli__subcmd__logs__subcmd__search"
+                ;;
+            gcli__subcmd__logs__subcmd__help,help)
+                cmd="gcli__subcmd__logs__subcmd__help__subcmd__help"
+                ;;
+            gcli__subcmd__logs__subcmd__help,label-values)
+                cmd="gcli__subcmd__logs__subcmd__help__subcmd__label__subcmd__values"
+                ;;
+            gcli__subcmd__logs__subcmd__help,labels)
+                cmd="gcli__subcmd__logs__subcmd__help__subcmd__labels"
+                ;;
+            gcli__subcmd__logs__subcmd__help,search)
+                cmd="gcli__subcmd__logs__subcmd__help__subcmd__search"
+                ;;
+            gcli__subcmd__metrics,help)
+                cmd="gcli__subcmd__metrics__subcmd__help"
+                ;;
+            gcli__subcmd__metrics,instant)
+                cmd="gcli__subcmd__metrics__subcmd__instant"
+                ;;
+            gcli__subcmd__metrics,range)
+                cmd="gcli__subcmd__metrics__subcmd__range"
+                ;;
+            gcli__subcmd__metrics__subcmd__help,help)
+                cmd="gcli__subcmd__metrics__subcmd__help__subcmd__help"
+                ;;
+            gcli__subcmd__metrics__subcmd__help,instant)
+                cmd="gcli__subcmd__metrics__subcmd__help__subcmd__instant"
+                ;;
+            gcli__subcmd__metrics__subcmd__help,range)
+                cmd="gcli__subcmd__metrics__subcmd__help__subcmd__range"
+                ;;
+            gcli__subcmd__profile,add)
+                cmd="gcli__subcmd__profile__subcmd__add"
+                ;;
+            gcli__subcmd__profile,help)
+                cmd="gcli__subcmd__profile__subcmd__help"
+                ;;
+            gcli__subcmd__profile,list)
+                cmd="gcli__subcmd__profile__subcmd__list"
+                ;;
+            gcli__subcmd__profile,remove)
+                cmd="gcli__subcmd__profile__subcmd__remove"
+                ;;
+            gcli__subcmd__profile,set-token)
+                cmd="gcli__subcmd__profile__subcmd__set__subcmd__token"
+                ;;
+            gcli__subcmd__profile,use)
+                cmd="gcli__subcmd__profile__subcmd__use"
+                ;;
+            gcli__subcmd__profile__subcmd__help,add)
+                cmd="gcli__subcmd__profile__subcmd__help__subcmd__add"
+                ;;
+            gcli__subcmd__profile__subcmd__help,help)
+                cmd="gcli__subcmd__profile__subcmd__help__subcmd__help"
+                ;;
+            gcli__subcmd__profile__subcmd__help,list)
+                cmd="gcli__subcmd__profile__subcmd__help__subcmd__list"
+                ;;
+            gcli__subcmd__profile__subcmd__help,remove)
+                cmd="gcli__subcmd__profile__subcmd__help__subcmd__remove"
+                ;;
+            gcli__subcmd__profile__subcmd__help,set-token)
+                cmd="gcli__subcmd__profile__subcmd__help__subcmd__set__subcmd__token"
+                ;;
+            gcli__subcmd__profile__subcmd__help,use)
+                cmd="gcli__subcmd__profile__subcmd__help__subcmd__use"
+                ;;
+            gcli__subcmd__traces,get)
+                cmd="gcli__subcmd__traces__subcmd__get"
+                ;;
+            gcli__subcmd__traces,help)
+                cmd="gcli__subcmd__traces__subcmd__help"
+                ;;
+            gcli__subcmd__traces,search)
+                cmd="gcli__subcmd__traces__subcmd__search"
+                ;;
+            gcli__subcmd__traces__subcmd__help,get)
+                cmd="gcli__subcmd__traces__subcmd__help__subcmd__get"
+                ;;
+            gcli__subcmd__traces__subcmd__help,help)
+                cmd="gcli__subcmd__traces__subcmd__help__subcmd__help"
+                ;;
+            gcli__subcmd__traces__subcmd__help,search)
+                cmd="gcli__subcmd__traces__subcmd__help__subcmd__search"
+                ;;
+            *)
+                ;;
+        esac
+    done
+
+    case "${cmd}" in
+        gcli)
+            opts="-h -V --profile --all-profiles --output --url --token --username --password --help --version profile health datasources logs metrics traces completions help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --profile)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -W "json table" -- "${cur}"))
+                    return 0
+                    ;;
+                --url)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --token)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --username)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --password)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__completions)
+            opts="-h --profile --all-profiles --output --url --token --username --password --help bash zsh fish"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --profile)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -W "json table" -- "${cur}"))
+                    return 0
+                    ;;
+                --url)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --token)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --username)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --password)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__datasources)
+            opts="-h --type --profile --all-profiles --output --url --token --username --password --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --type)
+                    COMPREPLY=($(compgen -W "loki prometheus tempo" -- "${cur}"))
+                    return 0
+                    ;;
+                --profile)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -W "json table" -- "${cur}"))
+                    return 0
+                    ;;
+                --url)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --token)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --username)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --password)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__health)
+            opts="-h --profile --all-profiles --output --url --token --username --password --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --profile)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -W "json table" -- "${cur}"))
+                    return 0
+                    ;;
+                --url)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --token)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --username)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --password)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__help)
+            opts="profile health datasources logs metrics traces completions help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__help__subcmd__completions)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__help__subcmd__datasources)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__help__subcmd__health)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__help__subcmd__help)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__help__subcmd__logs)
+            opts="search labels label-values"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__help__subcmd__logs__subcmd__label__subcmd__values)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__help__subcmd__logs__subcmd__labels)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__help__subcmd__logs__subcmd__search)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__help__subcmd__metrics)
+            opts="instant range"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__help__subcmd__metrics__subcmd__instant)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__help__subcmd__metrics__subcmd__range)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__help__subcmd__profile)
+            opts="add list use remove set-token"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__help__subcmd__profile__subcmd__add)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__help__subcmd__profile__subcmd__list)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__help__subcmd__profile__subcmd__remove)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__help__subcmd__profile__subcmd__set__subcmd__token)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__help__subcmd__profile__subcmd__use)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__help__subcmd__traces)
+            opts="get search"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__help__subcmd__traces__subcmd__get)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__help__subcmd__traces__subcmd__search)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__logs)
+            opts="-h --profile --all-profiles --output --url --token --username --password --help search labels label-values help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --profile)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -W "json table" -- "${cur}"))
+                    return 0
+                    ;;
+                --url)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --token)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --username)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --password)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__logs__subcmd__help)
+            opts="search labels label-values help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__logs__subcmd__help__subcmd__help)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__logs__subcmd__help__subcmd__label__subcmd__values)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__logs__subcmd__help__subcmd__labels)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__logs__subcmd__help__subcmd__search)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__logs__subcmd__label__subcmd__values)
+            opts="-h --since --from --to --datasource --profile --all-profiles --output --url --token --username --password --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --since)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --from)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --to)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --datasource)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --profile)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -W "json table" -- "${cur}"))
+                    return 0
+                    ;;
+                --url)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --token)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --username)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --password)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__logs__subcmd__labels)
+            opts="-h --since --from --to --datasource --profile --all-profiles --output --url --token --username --password --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --since)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --from)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --to)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --datasource)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --profile)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -W "json table" -- "${cur}"))
+                    return 0
+                    ;;
+                --url)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --token)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --username)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --password)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__logs__subcmd__search)
+            opts="-h --since --from --to --datasource --limit --direction --profile --all-profiles --output --url --token --username --password --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --since)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --from)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --to)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --datasource)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --limit)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --direction)
+                    COMPREPLY=($(compgen -W "forward backward" -- "${cur}"))
+                    return 0
+                    ;;
+                --profile)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -W "json table" -- "${cur}"))
+                    return 0
+                    ;;
+                --url)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --token)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --username)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --password)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__metrics)
+            opts="-h --profile --all-profiles --output --url --token --username --password --help instant range help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --profile)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -W "json table" -- "${cur}"))
+                    return 0
+                    ;;
+                --url)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --token)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --username)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --password)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__metrics__subcmd__help)
+            opts="instant range help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__metrics__subcmd__help__subcmd__help)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__metrics__subcmd__help__subcmd__instant)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__metrics__subcmd__help__subcmd__range)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__metrics__subcmd__instant)
+            opts="-h --at --datasource --profile --all-profiles --output --url --token --username --password --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --at)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --datasource)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --profile)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -W "json table" -- "${cur}"))
+                    return 0
+                    ;;
+                --url)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --token)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --username)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --password)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__metrics__subcmd__range)
+            opts="-h --since --from --to --datasource --step --profile --all-profiles --output --url --token --username --password --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --since)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --from)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --to)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --datasource)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --step)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --profile)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -W "json table" -- "${cur}"))
+                    return 0
+                    ;;
+                --url)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --token)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --username)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --password)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__profile)
+            opts="-h --profile --all-profiles --output --url --token --username --password --help add list use remove set-token help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --profile)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -W "json table" -- "${cur}"))
+                    return 0
+                    ;;
+                --url)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --token)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --username)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --password)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__profile__subcmd__add)
+            opts="-h --url --token --token-command --username --password --password-command --token-url --client-id --client-secret --client-secret-command --scope --audience --profile --all-profiles --output --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --url)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --token)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --token-command)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --username)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --password)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --password-command)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --token-url)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --client-id)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --client-secret)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --client-secret-command)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --scope)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --audience)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --profile)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -W "json table" -- "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__profile__subcmd__help)
+            opts="add list use remove set-token help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__profile__subcmd__help__subcmd__add)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__profile__subcmd__help__subcmd__help)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__profile__subcmd__help__subcmd__list)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__profile__subcmd__help__subcmd__remove)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__profile__subcmd__help__subcmd__set__subcmd__token)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__profile__subcmd__help__subcmd__use)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__profile__subcmd__list)
+            opts="-h --profile --all-profiles --output --url --token --username --password --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --profile)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -W "json table" -- "${cur}"))
+                    return 0
+                    ;;
+                --url)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --token)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --username)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --password)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__profile__subcmd__remove)
+            opts="-h --profile --all-profiles --output --url --token --username --password --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --profile)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -W "json table" -- "${cur}"))
+                    return 0
+                    ;;
+                --url)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --token)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --username)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --password)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__profile__subcmd__set__subcmd__token)
+            opts="-h --token --profile --all-profiles --output --url --username --password --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --token)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --profile)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -W "json table" -- "${cur}"))
+                    return 0
+                    ;;
+                --url)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --username)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --password)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__profile__subcmd__use)
+            opts="-h --profile --all-profiles --output --url --token --username --password --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --profile)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -W "json table" -- "${cur}"))
+                    return 0
+                    ;;
+                --url)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --token)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --username)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --password)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__traces)
+            opts="-h --profile --all-profiles --output --url --token --username --password --help get search help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --profile)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -W "json table" -- "${cur}"))
+                    return 0
+                    ;;
+                --url)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --token)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --username)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --password)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__traces__subcmd__get)
+            opts="-h --datasource --profile --all-profiles --output --url --token --username --password --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --datasource)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --profile)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -W "json table" -- "${cur}"))
+                    return 0
+                    ;;
+                --url)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --token)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --username)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --password)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__traces__subcmd__help)
+            opts="get search help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__traces__subcmd__help__subcmd__get)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__traces__subcmd__help__subcmd__help)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__traces__subcmd__help__subcmd__search)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gcli__subcmd__traces__subcmd__search)
+            opts="-h --since --from --to --datasource --limit --profile --all-profiles --output --url --token --username --password --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --since)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --from)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --to)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --datasource)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --limit)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --profile)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -W "json table" -- "${cur}"))
+                    return 0
+                    ;;
+                --url)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --token)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --username)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --password)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+    esac
+}
+
+if [[ "${BASH_VERSINFO[0]}" -eq 4 && "${BASH_VERSINFO[1]}" -ge 4 || "${BASH_VERSINFO[0]}" -gt 4 ]]; then
+    complete -F _gcli -o nosort -o bashdefault -o default gcli
+else
+    complete -F _gcli -o bashdefault -o default gcli
+fi
+--- stderr ---
+--- exit: 0 ---
+$ gcli completions zsh
+--- stdout ---
+#compdef gcli
+
+autoload -U is-at-least
+
+_gcli() {
+    typeset -A opt_args
+    typeset -a _arguments_options
+    local ret=1
+
+    if is-at-least 5.2; then
+        _arguments_options=(-s -S -C)
+    else
+        _arguments_options=(-s -C)
+    fi
+
+    local context curcontext="$curcontext" state line
+    _arguments "${_arguments_options[@]}" : \
+'--profile=[Comma-separated profile names]:NAMES:_default' \
+'--output=[]:OUTPUT:(json table)' \
+'--url=[]:URL:_default' \
+'--token=[]:TOKEN:_default' \
+'--username=[]:USERNAME:_default' \
+'--password=[]:PASSWORD:_default' \
+'(--profile)--all-profiles[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+'-V[Print version]' \
+'--version[Print version]' \
+":: :_gcli_commands" \
+"*::: :->gcli" \
+&& ret=0
+    case $state in
+    (gcli)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:gcli-command-$line[1]:"
+        case $line[1] in
+            (profile)
+_arguments "${_arguments_options[@]}" : \
+'--profile=[Comma-separated profile names]:NAMES:_default' \
+'--output=[]:OUTPUT:(json table)' \
+'--url=[]:URL:_default' \
+'--token=[]:TOKEN:_default' \
+'--username=[]:USERNAME:_default' \
+'--password=[]:PASSWORD:_default' \
+'(--profile)--all-profiles[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+":: :_gcli__subcmd__profile_commands" \
+"*::: :->profile" \
+&& ret=0
+
+    case $state in
+    (profile)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:gcli-profile-command-$line[1]:"
+        case $line[1] in
+            (add)
+_arguments "${_arguments_options[@]}" : \
+'--url=[]:URL:_default' \
+'--token=[]:TOKEN:_default' \
+'*--token-command=[]:TOKEN_COMMAND:_default' \
+'--username=[]:USERNAME:_default' \
+'--password=[]:PASSWORD:_default' \
+'*--password-command=[]:PASSWORD_COMMAND:_default' \
+'--token-url=[]:TOKEN_URL:_default' \
+'--client-id=[]:CLIENT_ID:_default' \
+'--client-secret=[]:CLIENT_SECRET:_default' \
+'*--client-secret-command=[]:CLIENT_SECRET_COMMAND:_default' \
+'*--scope=[]:SCOPE:_default' \
+'--audience=[]:AUDIENCE:_default' \
+'--profile=[Comma-separated profile names]:NAMES:_default' \
+'--output=[]:OUTPUT:(json table)' \
+'(--profile)--all-profiles[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+':name:_default' \
+&& ret=0
+;;
+(list)
+_arguments "${_arguments_options[@]}" : \
+'--profile=[Comma-separated profile names]:NAMES:_default' \
+'--output=[]:OUTPUT:(json table)' \
+'--url=[]:URL:_default' \
+'--token=[]:TOKEN:_default' \
+'--username=[]:USERNAME:_default' \
+'--password=[]:PASSWORD:_default' \
+'(--profile)--all-profiles[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(use)
+_arguments "${_arguments_options[@]}" : \
+'--profile=[Comma-separated profile names]:NAMES:_default' \
+'--output=[]:OUTPUT:(json table)' \
+'--url=[]:URL:_default' \
+'--token=[]:TOKEN:_default' \
+'--username=[]:USERNAME:_default' \
+'--password=[]:PASSWORD:_default' \
+'(--profile)--all-profiles[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+':name:_default' \
+&& ret=0
+;;
+(remove)
+_arguments "${_arguments_options[@]}" : \
+'--profile=[Comma-separated profile names]:NAMES:_default' \
+'--output=[]:OUTPUT:(json table)' \
+'--url=[]:URL:_default' \
+'--token=[]:TOKEN:_default' \
+'--username=[]:USERNAME:_default' \
+'--password=[]:PASSWORD:_default' \
+'(--profile)--all-profiles[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+':name:_default' \
+&& ret=0
+;;
+(set-token)
+_arguments "${_arguments_options[@]}" : \
+'--token=[]:TOKEN:_default' \
+'--profile=[Comma-separated profile names]:NAMES:_default' \
+'--output=[]:OUTPUT:(json table)' \
+'--url=[]:URL:_default' \
+'--username=[]:USERNAME:_default' \
+'--password=[]:PASSWORD:_default' \
+'(--profile)--all-profiles[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+':name:_default' \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : \
+":: :_gcli__subcmd__profile__subcmd__help_commands" \
+"*::: :->help" \
+&& ret=0
+
+    case $state in
+    (help)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:gcli-profile-help-command-$line[1]:"
+        case $line[1] in
+            (add)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(list)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(use)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(remove)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(set-token)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+        esac
+    ;;
+esac
+;;
+(health)
+_arguments "${_arguments_options[@]}" : \
+'--profile=[Comma-separated profile names]:NAMES:_default' \
+'--output=[]:OUTPUT:(json table)' \
+'--url=[]:URL:_default' \
+'--token=[]:TOKEN:_default' \
+'--username=[]:USERNAME:_default' \
+'--password=[]:PASSWORD:_default' \
+'(--profile)--all-profiles[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(datasources)
+_arguments "${_arguments_options[@]}" : \
+'--type=[]:TYPE:(loki prometheus tempo)' \
+'--profile=[Comma-separated profile names]:NAMES:_default' \
+'--output=[]:OUTPUT:(json table)' \
+'--url=[]:URL:_default' \
+'--token=[]:TOKEN:_default' \
+'--username=[]:USERNAME:_default' \
+'--password=[]:PASSWORD:_default' \
+'(--profile)--all-profiles[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(logs)
+_arguments "${_arguments_options[@]}" : \
+'--profile=[Comma-separated profile names]:NAMES:_default' \
+'--output=[]:OUTPUT:(json table)' \
+'--url=[]:URL:_default' \
+'--token=[]:TOKEN:_default' \
+'--username=[]:USERNAME:_default' \
+'--password=[]:PASSWORD:_default' \
+'(--profile)--all-profiles[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+":: :_gcli__subcmd__logs_commands" \
+"*::: :->logs" \
+&& ret=0
+
+    case $state in
+    (logs)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:gcli-logs-command-$line[1]:"
+        case $line[1] in
+            (search)
+_arguments "${_arguments_options[@]}" : \
+'--since=[]:SINCE:_default' \
+'--from=[]:FROM:_default' \
+'--to=[]:TO:_default' \
+'--datasource=[]:DATASOURCE:_default' \
+'--limit=[]:LIMIT:_default' \
+'--direction=[]:DIRECTION:(forward backward)' \
+'--profile=[Comma-separated profile names]:NAMES:_default' \
+'--output=[]:OUTPUT:(json table)' \
+'--url=[]:URL:_default' \
+'--token=[]:TOKEN:_default' \
+'--username=[]:USERNAME:_default' \
+'--password=[]:PASSWORD:_default' \
+'(--profile)--all-profiles[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+':query:_default' \
+&& ret=0
+;;
+(labels)
+_arguments "${_arguments_options[@]}" : \
+'--since=[]:SINCE:_default' \
+'--from=[]:FROM:_default' \
+'--to=[]:TO:_default' \
+'--datasource=[]:DATASOURCE:_default' \
+'--profile=[Comma-separated profile names]:NAMES:_default' \
+'--output=[]:OUTPUT:(json table)' \
+'--url=[]:URL:_default' \
+'--token=[]:TOKEN:_default' \
+'--username=[]:USERNAME:_default' \
+'--password=[]:PASSWORD:_default' \
+'(--profile)--all-profiles[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(label-values)
+_arguments "${_arguments_options[@]}" : \
+'--since=[]:SINCE:_default' \
+'--from=[]:FROM:_default' \
+'--to=[]:TO:_default' \
+'--datasource=[]:DATASOURCE:_default' \
+'--profile=[Comma-separated profile names]:NAMES:_default' \
+'--output=[]:OUTPUT:(json table)' \
+'--url=[]:URL:_default' \
+'--token=[]:TOKEN:_default' \
+'--username=[]:USERNAME:_default' \
+'--password=[]:PASSWORD:_default' \
+'(--profile)--all-profiles[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+':label:_default' \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : \
+":: :_gcli__subcmd__logs__subcmd__help_commands" \
+"*::: :->help" \
+&& ret=0
+
+    case $state in
+    (help)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:gcli-logs-help-command-$line[1]:"
+        case $line[1] in
+            (search)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(labels)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(label-values)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+        esac
+    ;;
+esac
+;;
+(metrics)
+_arguments "${_arguments_options[@]}" : \
+'--profile=[Comma-separated profile names]:NAMES:_default' \
+'--output=[]:OUTPUT:(json table)' \
+'--url=[]:URL:_default' \
+'--token=[]:TOKEN:_default' \
+'--username=[]:USERNAME:_default' \
+'--password=[]:PASSWORD:_default' \
+'(--profile)--all-profiles[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+":: :_gcli__subcmd__metrics_commands" \
+"*::: :->metrics" \
+&& ret=0
+
+    case $state in
+    (metrics)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:gcli-metrics-command-$line[1]:"
+        case $line[1] in
+            (instant)
+_arguments "${_arguments_options[@]}" : \
+'--at=[]:AT:_default' \
+'--datasource=[]:DATASOURCE:_default' \
+'--profile=[Comma-separated profile names]:NAMES:_default' \
+'--output=[]:OUTPUT:(json table)' \
+'--url=[]:URL:_default' \
+'--token=[]:TOKEN:_default' \
+'--username=[]:USERNAME:_default' \
+'--password=[]:PASSWORD:_default' \
+'(--profile)--all-profiles[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+':query:_default' \
+&& ret=0
+;;
+(range)
+_arguments "${_arguments_options[@]}" : \
+'--since=[]:SINCE:_default' \
+'--from=[]:FROM:_default' \
+'--to=[]:TO:_default' \
+'--datasource=[]:DATASOURCE:_default' \
+'--step=[]:STEP:_default' \
+'--profile=[Comma-separated profile names]:NAMES:_default' \
+'--output=[]:OUTPUT:(json table)' \
+'--url=[]:URL:_default' \
+'--token=[]:TOKEN:_default' \
+'--username=[]:USERNAME:_default' \
+'--password=[]:PASSWORD:_default' \
+'(--profile)--all-profiles[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+':query:_default' \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : \
+":: :_gcli__subcmd__metrics__subcmd__help_commands" \
+"*::: :->help" \
+&& ret=0
+
+    case $state in
+    (help)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:gcli-metrics-help-command-$line[1]:"
+        case $line[1] in
+            (instant)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(range)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+        esac
+    ;;
+esac
+;;
+(traces)
+_arguments "${_arguments_options[@]}" : \
+'--profile=[Comma-separated profile names]:NAMES:_default' \
+'--output=[]:OUTPUT:(json table)' \
+'--url=[]:URL:_default' \
+'--token=[]:TOKEN:_default' \
+'--username=[]:USERNAME:_default' \
+'--password=[]:PASSWORD:_default' \
+'(--profile)--all-profiles[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+":: :_gcli__subcmd__traces_commands" \
+"*::: :->traces" \
+&& ret=0
+
+    case $state in
+    (traces)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:gcli-traces-command-$line[1]:"
+        case $line[1] in
+            (get)
+_arguments "${_arguments_options[@]}" : \
+'--datasource=[]:DATASOURCE:_default' \
+'--profile=[Comma-separated profile names]:NAMES:_default' \
+'--output=[]:OUTPUT:(json table)' \
+'--url=[]:URL:_default' \
+'--token=[]:TOKEN:_default' \
+'--username=[]:USERNAME:_default' \
+'--password=[]:PASSWORD:_default' \
+'(--profile)--all-profiles[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+':trace_id:_default' \
+&& ret=0
+;;
+(search)
+_arguments "${_arguments_options[@]}" : \
+'--since=[]:SINCE:_default' \
+'--from=[]:FROM:_default' \
+'--to=[]:TO:_default' \
+'--datasource=[]:DATASOURCE:_default' \
+'--limit=[]:LIMIT:_default' \
+'--profile=[Comma-separated profile names]:NAMES:_default' \
+'--output=[]:OUTPUT:(json table)' \
+'--url=[]:URL:_default' \
+'--token=[]:TOKEN:_default' \
+'--username=[]:USERNAME:_default' \
+'--password=[]:PASSWORD:_default' \
+'(--profile)--all-profiles[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+':query:_default' \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : \
+":: :_gcli__subcmd__traces__subcmd__help_commands" \
+"*::: :->help" \
+&& ret=0
+
+    case $state in
+    (help)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:gcli-traces-help-command-$line[1]:"
+        case $line[1] in
+            (get)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(search)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+        esac
+    ;;
+esac
+;;
+(completions)
+_arguments "${_arguments_options[@]}" : \
+'--profile=[Comma-separated profile names]:NAMES:_default' \
+'--output=[]:OUTPUT:(json table)' \
+'--url=[]:URL:_default' \
+'--token=[]:TOKEN:_default' \
+'--username=[]:USERNAME:_default' \
+'--password=[]:PASSWORD:_default' \
+'(--profile)--all-profiles[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+':shell:(bash zsh fish)' \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : \
+":: :_gcli__subcmd__help_commands" \
+"*::: :->help" \
+&& ret=0
+
+    case $state in
+    (help)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:gcli-help-command-$line[1]:"
+        case $line[1] in
+            (profile)
+_arguments "${_arguments_options[@]}" : \
+":: :_gcli__subcmd__help__subcmd__profile_commands" \
+"*::: :->profile" \
+&& ret=0
+
+    case $state in
+    (profile)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:gcli-help-profile-command-$line[1]:"
+        case $line[1] in
+            (add)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(list)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(use)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(remove)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(set-token)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+(health)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(datasources)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(logs)
+_arguments "${_arguments_options[@]}" : \
+":: :_gcli__subcmd__help__subcmd__logs_commands" \
+"*::: :->logs" \
+&& ret=0
+
+    case $state in
+    (logs)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:gcli-help-logs-command-$line[1]:"
+        case $line[1] in
+            (search)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(labels)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(label-values)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+(metrics)
+_arguments "${_arguments_options[@]}" : \
+":: :_gcli__subcmd__help__subcmd__metrics_commands" \
+"*::: :->metrics" \
+&& ret=0
+
+    case $state in
+    (metrics)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:gcli-help-metrics-command-$line[1]:"
+        case $line[1] in
+            (instant)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(range)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+(traces)
+_arguments "${_arguments_options[@]}" : \
+":: :_gcli__subcmd__help__subcmd__traces_commands" \
+"*::: :->traces" \
+&& ret=0
+
+    case $state in
+    (traces)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:gcli-help-traces-command-$line[1]:"
+        case $line[1] in
+            (get)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(search)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+(completions)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+        esac
+    ;;
+esac
+}
+
+(( $+functions[_gcli_commands] )) ||
+_gcli_commands() {
+    local commands; commands=(
+'profile:' \
+'health:' \
+'datasources:' \
+'logs:' \
+'metrics:' \
+'traces:' \
+'completions:' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'gcli commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__completions_commands] )) ||
+_gcli__subcmd__completions_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli completions commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__datasources_commands] )) ||
+_gcli__subcmd__datasources_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli datasources commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__health_commands] )) ||
+_gcli__subcmd__health_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli health commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__help_commands] )) ||
+_gcli__subcmd__help_commands() {
+    local commands; commands=(
+'profile:' \
+'health:' \
+'datasources:' \
+'logs:' \
+'metrics:' \
+'traces:' \
+'completions:' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'gcli help commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__help__subcmd__completions_commands] )) ||
+_gcli__subcmd__help__subcmd__completions_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli help completions commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__help__subcmd__datasources_commands] )) ||
+_gcli__subcmd__help__subcmd__datasources_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli help datasources commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__help__subcmd__health_commands] )) ||
+_gcli__subcmd__help__subcmd__health_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli help health commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__help__subcmd__help_commands] )) ||
+_gcli__subcmd__help__subcmd__help_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli help help commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__help__subcmd__logs_commands] )) ||
+_gcli__subcmd__help__subcmd__logs_commands() {
+    local commands; commands=(
+'search:' \
+'labels:' \
+'label-values:' \
+    )
+    _describe -t commands 'gcli help logs commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__help__subcmd__logs__subcmd__label-values_commands] )) ||
+_gcli__subcmd__help__subcmd__logs__subcmd__label-values_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli help logs label-values commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__help__subcmd__logs__subcmd__labels_commands] )) ||
+_gcli__subcmd__help__subcmd__logs__subcmd__labels_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli help logs labels commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__help__subcmd__logs__subcmd__search_commands] )) ||
+_gcli__subcmd__help__subcmd__logs__subcmd__search_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli help logs search commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__help__subcmd__metrics_commands] )) ||
+_gcli__subcmd__help__subcmd__metrics_commands() {
+    local commands; commands=(
+'instant:' \
+'range:' \
+    )
+    _describe -t commands 'gcli help metrics commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__help__subcmd__metrics__subcmd__instant_commands] )) ||
+_gcli__subcmd__help__subcmd__metrics__subcmd__instant_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli help metrics instant commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__help__subcmd__metrics__subcmd__range_commands] )) ||
+_gcli__subcmd__help__subcmd__metrics__subcmd__range_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli help metrics range commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__help__subcmd__profile_commands] )) ||
+_gcli__subcmd__help__subcmd__profile_commands() {
+    local commands; commands=(
+'add:' \
+'list:' \
+'use:' \
+'remove:' \
+'set-token:' \
+    )
+    _describe -t commands 'gcli help profile commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__help__subcmd__profile__subcmd__add_commands] )) ||
+_gcli__subcmd__help__subcmd__profile__subcmd__add_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli help profile add commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__help__subcmd__profile__subcmd__list_commands] )) ||
+_gcli__subcmd__help__subcmd__profile__subcmd__list_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli help profile list commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__help__subcmd__profile__subcmd__remove_commands] )) ||
+_gcli__subcmd__help__subcmd__profile__subcmd__remove_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli help profile remove commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__help__subcmd__profile__subcmd__set-token_commands] )) ||
+_gcli__subcmd__help__subcmd__profile__subcmd__set-token_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli help profile set-token commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__help__subcmd__profile__subcmd__use_commands] )) ||
+_gcli__subcmd__help__subcmd__profile__subcmd__use_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli help profile use commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__help__subcmd__traces_commands] )) ||
+_gcli__subcmd__help__subcmd__traces_commands() {
+    local commands; commands=(
+'get:' \
+'search:' \
+    )
+    _describe -t commands 'gcli help traces commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__help__subcmd__traces__subcmd__get_commands] )) ||
+_gcli__subcmd__help__subcmd__traces__subcmd__get_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli help traces get commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__help__subcmd__traces__subcmd__search_commands] )) ||
+_gcli__subcmd__help__subcmd__traces__subcmd__search_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli help traces search commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__logs_commands] )) ||
+_gcli__subcmd__logs_commands() {
+    local commands; commands=(
+'search:' \
+'labels:' \
+'label-values:' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'gcli logs commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__logs__subcmd__help_commands] )) ||
+_gcli__subcmd__logs__subcmd__help_commands() {
+    local commands; commands=(
+'search:' \
+'labels:' \
+'label-values:' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'gcli logs help commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__logs__subcmd__help__subcmd__help_commands] )) ||
+_gcli__subcmd__logs__subcmd__help__subcmd__help_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli logs help help commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__logs__subcmd__help__subcmd__label-values_commands] )) ||
+_gcli__subcmd__logs__subcmd__help__subcmd__label-values_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli logs help label-values commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__logs__subcmd__help__subcmd__labels_commands] )) ||
+_gcli__subcmd__logs__subcmd__help__subcmd__labels_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli logs help labels commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__logs__subcmd__help__subcmd__search_commands] )) ||
+_gcli__subcmd__logs__subcmd__help__subcmd__search_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli logs help search commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__logs__subcmd__label-values_commands] )) ||
+_gcli__subcmd__logs__subcmd__label-values_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli logs label-values commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__logs__subcmd__labels_commands] )) ||
+_gcli__subcmd__logs__subcmd__labels_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli logs labels commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__logs__subcmd__search_commands] )) ||
+_gcli__subcmd__logs__subcmd__search_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli logs search commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__metrics_commands] )) ||
+_gcli__subcmd__metrics_commands() {
+    local commands; commands=(
+'instant:' \
+'range:' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'gcli metrics commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__metrics__subcmd__help_commands] )) ||
+_gcli__subcmd__metrics__subcmd__help_commands() {
+    local commands; commands=(
+'instant:' \
+'range:' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'gcli metrics help commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__metrics__subcmd__help__subcmd__help_commands] )) ||
+_gcli__subcmd__metrics__subcmd__help__subcmd__help_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli metrics help help commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__metrics__subcmd__help__subcmd__instant_commands] )) ||
+_gcli__subcmd__metrics__subcmd__help__subcmd__instant_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli metrics help instant commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__metrics__subcmd__help__subcmd__range_commands] )) ||
+_gcli__subcmd__metrics__subcmd__help__subcmd__range_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli metrics help range commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__metrics__subcmd__instant_commands] )) ||
+_gcli__subcmd__metrics__subcmd__instant_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli metrics instant commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__metrics__subcmd__range_commands] )) ||
+_gcli__subcmd__metrics__subcmd__range_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli metrics range commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__profile_commands] )) ||
+_gcli__subcmd__profile_commands() {
+    local commands; commands=(
+'add:' \
+'list:' \
+'use:' \
+'remove:' \
+'set-token:' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'gcli profile commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__profile__subcmd__add_commands] )) ||
+_gcli__subcmd__profile__subcmd__add_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli profile add commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__profile__subcmd__help_commands] )) ||
+_gcli__subcmd__profile__subcmd__help_commands() {
+    local commands; commands=(
+'add:' \
+'list:' \
+'use:' \
+'remove:' \
+'set-token:' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'gcli profile help commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__profile__subcmd__help__subcmd__add_commands] )) ||
+_gcli__subcmd__profile__subcmd__help__subcmd__add_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli profile help add commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__profile__subcmd__help__subcmd__help_commands] )) ||
+_gcli__subcmd__profile__subcmd__help__subcmd__help_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli profile help help commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__profile__subcmd__help__subcmd__list_commands] )) ||
+_gcli__subcmd__profile__subcmd__help__subcmd__list_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli profile help list commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__profile__subcmd__help__subcmd__remove_commands] )) ||
+_gcli__subcmd__profile__subcmd__help__subcmd__remove_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli profile help remove commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__profile__subcmd__help__subcmd__set-token_commands] )) ||
+_gcli__subcmd__profile__subcmd__help__subcmd__set-token_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli profile help set-token commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__profile__subcmd__help__subcmd__use_commands] )) ||
+_gcli__subcmd__profile__subcmd__help__subcmd__use_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli profile help use commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__profile__subcmd__list_commands] )) ||
+_gcli__subcmd__profile__subcmd__list_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli profile list commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__profile__subcmd__remove_commands] )) ||
+_gcli__subcmd__profile__subcmd__remove_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli profile remove commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__profile__subcmd__set-token_commands] )) ||
+_gcli__subcmd__profile__subcmd__set-token_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli profile set-token commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__profile__subcmd__use_commands] )) ||
+_gcli__subcmd__profile__subcmd__use_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli profile use commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__traces_commands] )) ||
+_gcli__subcmd__traces_commands() {
+    local commands; commands=(
+'get:' \
+'search:' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'gcli traces commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__traces__subcmd__get_commands] )) ||
+_gcli__subcmd__traces__subcmd__get_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli traces get commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__traces__subcmd__help_commands] )) ||
+_gcli__subcmd__traces__subcmd__help_commands() {
+    local commands; commands=(
+'get:' \
+'search:' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'gcli traces help commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__traces__subcmd__help__subcmd__get_commands] )) ||
+_gcli__subcmd__traces__subcmd__help__subcmd__get_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli traces help get commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__traces__subcmd__help__subcmd__help_commands] )) ||
+_gcli__subcmd__traces__subcmd__help__subcmd__help_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli traces help help commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__traces__subcmd__help__subcmd__search_commands] )) ||
+_gcli__subcmd__traces__subcmd__help__subcmd__search_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli traces help search commands' commands "$@"
+}
+(( $+functions[_gcli__subcmd__traces__subcmd__search_commands] )) ||
+_gcli__subcmd__traces__subcmd__search_commands() {
+    local commands; commands=()
+    _describe -t commands 'gcli traces search commands' commands "$@"
+}
+
+if [ "$funcstack[1]" = "_gcli" ]; then
+    _gcli "$@"
+else
+    compdef _gcli gcli
+fi
+--- stderr ---
+--- exit: 0 ---
+$ gcli completions fish
+--- stdout ---
+# Print an optspec for argparse to handle cmd's options that are independent of any subcommand.
+function __fish_gcli_global_optspecs
+    string join \n profile= all-profiles output= url= token= username= password= h/help V/version
+end
+
+function __fish_gcli_needs_command
+    # Figure out if the current invocation already has a command.
+    set -l cmd (commandline -opc)
+    set -e cmd[1]
+    argparse -s (__fish_gcli_global_optspecs) -- $cmd 2>/dev/null
+    or return
+    if set -q argv[1]
+        # Also print the command, so this can be used to figure out what it is.
+        echo $argv[1]
+        return 1
+    end
+    return 0
+end
+
+function __fish_gcli_using_subcommand
+    set -l cmd (__fish_gcli_needs_command)
+    test -z "$cmd"
+    and return 1
+    contains -- $cmd[1] $argv
+end
+
+complete -c gcli -n "__fish_gcli_needs_command" -l profile -d 'Comma-separated profile names' -r
+complete -c gcli -n "__fish_gcli_needs_command" -l output -r -f -a "json\t''
+table\t''"
+complete -c gcli -n "__fish_gcli_needs_command" -l url -r
+complete -c gcli -n "__fish_gcli_needs_command" -l token -r
+complete -c gcli -n "__fish_gcli_needs_command" -l username -r
+complete -c gcli -n "__fish_gcli_needs_command" -l password -r
+complete -c gcli -n "__fish_gcli_needs_command" -l all-profiles
+complete -c gcli -n "__fish_gcli_needs_command" -s h -l help -d 'Print help'
+complete -c gcli -n "__fish_gcli_needs_command" -s V -l version -d 'Print version'
+complete -c gcli -n "__fish_gcli_needs_command" -f -a "profile"
+complete -c gcli -n "__fish_gcli_needs_command" -f -a "health"
+complete -c gcli -n "__fish_gcli_needs_command" -f -a "datasources"
+complete -c gcli -n "__fish_gcli_needs_command" -f -a "logs"
+complete -c gcli -n "__fish_gcli_needs_command" -f -a "metrics"
+complete -c gcli -n "__fish_gcli_needs_command" -f -a "traces"
+complete -c gcli -n "__fish_gcli_needs_command" -f -a "completions"
+complete -c gcli -n "__fish_gcli_needs_command" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and not __fish_seen_subcommand_from add list use remove set-token help" -l profile -d 'Comma-separated profile names' -r
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and not __fish_seen_subcommand_from add list use remove set-token help" -l output -r -f -a "json\t''
+table\t''"
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and not __fish_seen_subcommand_from add list use remove set-token help" -l url -r
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and not __fish_seen_subcommand_from add list use remove set-token help" -l token -r
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and not __fish_seen_subcommand_from add list use remove set-token help" -l username -r
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and not __fish_seen_subcommand_from add list use remove set-token help" -l password -r
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and not __fish_seen_subcommand_from add list use remove set-token help" -l all-profiles
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and not __fish_seen_subcommand_from add list use remove set-token help" -s h -l help -d 'Print help'
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and not __fish_seen_subcommand_from add list use remove set-token help" -f -a "add"
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and not __fish_seen_subcommand_from add list use remove set-token help" -f -a "list"
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and not __fish_seen_subcommand_from add list use remove set-token help" -f -a "use"
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and not __fish_seen_subcommand_from add list use remove set-token help" -f -a "remove"
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and not __fish_seen_subcommand_from add list use remove set-token help" -f -a "set-token"
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and not __fish_seen_subcommand_from add list use remove set-token help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from add" -l url -r
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from add" -l token -r
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from add" -l token-command -r
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from add" -l username -r
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from add" -l password -r
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from add" -l password-command -r
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from add" -l token-url -r
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from add" -l client-id -r
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from add" -l client-secret -r
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from add" -l client-secret-command -r
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from add" -l scope -r
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from add" -l audience -r
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from add" -l profile -d 'Comma-separated profile names' -r
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from add" -l output -r -f -a "json\t''
+table\t''"
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from add" -l all-profiles
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from add" -s h -l help -d 'Print help'
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from list" -l profile -d 'Comma-separated profile names' -r
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from list" -l output -r -f -a "json\t''
+table\t''"
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from list" -l url -r
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from list" -l token -r
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from list" -l username -r
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from list" -l password -r
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from list" -l all-profiles
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from list" -s h -l help -d 'Print help'
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from use" -l profile -d 'Comma-separated profile names' -r
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from use" -l output -r -f -a "json\t''
+table\t''"
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from use" -l url -r
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from use" -l token -r
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from use" -l username -r
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from use" -l password -r
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from use" -l all-profiles
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from use" -s h -l help -d 'Print help'
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from remove" -l profile -d 'Comma-separated profile names' -r
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from remove" -l output -r -f -a "json\t''
+table\t''"
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from remove" -l url -r
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from remove" -l token -r
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from remove" -l username -r
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from remove" -l password -r
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from remove" -l all-profiles
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from remove" -s h -l help -d 'Print help'
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from set-token" -l token -r
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from set-token" -l profile -d 'Comma-separated profile names' -r
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from set-token" -l output -r -f -a "json\t''
+table\t''"
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from set-token" -l url -r
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from set-token" -l username -r
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from set-token" -l password -r
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from set-token" -l all-profiles
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from set-token" -s h -l help -d 'Print help'
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from help" -f -a "add"
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from help" -f -a "list"
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from help" -f -a "use"
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from help" -f -a "remove"
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from help" -f -a "set-token"
+complete -c gcli -n "__fish_gcli_using_subcommand profile; and __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c gcli -n "__fish_gcli_using_subcommand health" -l profile -d 'Comma-separated profile names' -r
+complete -c gcli -n "__fish_gcli_using_subcommand health" -l output -r -f -a "json\t''
+table\t''"
+complete -c gcli -n "__fish_gcli_using_subcommand health" -l url -r
+complete -c gcli -n "__fish_gcli_using_subcommand health" -l token -r
+complete -c gcli -n "__fish_gcli_using_subcommand health" -l username -r
+complete -c gcli -n "__fish_gcli_using_subcommand health" -l password -r
+complete -c gcli -n "__fish_gcli_using_subcommand health" -l all-profiles
+complete -c gcli -n "__fish_gcli_using_subcommand health" -s h -l help -d 'Print help'
+complete -c gcli -n "__fish_gcli_using_subcommand datasources" -l type -r -f -a "loki\t''
+prometheus\t''
+tempo\t''"
+complete -c gcli -n "__fish_gcli_using_subcommand datasources" -l profile -d 'Comma-separated profile names' -r
+complete -c gcli -n "__fish_gcli_using_subcommand datasources" -l output -r -f -a "json\t''
+table\t''"
+complete -c gcli -n "__fish_gcli_using_subcommand datasources" -l url -r
+complete -c gcli -n "__fish_gcli_using_subcommand datasources" -l token -r
+complete -c gcli -n "__fish_gcli_using_subcommand datasources" -l username -r
+complete -c gcli -n "__fish_gcli_using_subcommand datasources" -l password -r
+complete -c gcli -n "__fish_gcli_using_subcommand datasources" -l all-profiles
+complete -c gcli -n "__fish_gcli_using_subcommand datasources" -s h -l help -d 'Print help'
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and not __fish_seen_subcommand_from search labels label-values help" -l profile -d 'Comma-separated profile names' -r
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and not __fish_seen_subcommand_from search labels label-values help" -l output -r -f -a "json\t''
+table\t''"
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and not __fish_seen_subcommand_from search labels label-values help" -l url -r
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and not __fish_seen_subcommand_from search labels label-values help" -l token -r
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and not __fish_seen_subcommand_from search labels label-values help" -l username -r
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and not __fish_seen_subcommand_from search labels label-values help" -l password -r
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and not __fish_seen_subcommand_from search labels label-values help" -l all-profiles
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and not __fish_seen_subcommand_from search labels label-values help" -s h -l help -d 'Print help'
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and not __fish_seen_subcommand_from search labels label-values help" -f -a "search"
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and not __fish_seen_subcommand_from search labels label-values help" -f -a "labels"
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and not __fish_seen_subcommand_from search labels label-values help" -f -a "label-values"
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and not __fish_seen_subcommand_from search labels label-values help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from search" -l since -r
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from search" -l from -r
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from search" -l to -r
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from search" -l datasource -r
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from search" -l limit -r
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from search" -l direction -r -f -a "forward\t''
+backward\t''"
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from search" -l profile -d 'Comma-separated profile names' -r
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from search" -l output -r -f -a "json\t''
+table\t''"
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from search" -l url -r
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from search" -l token -r
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from search" -l username -r
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from search" -l password -r
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from search" -l all-profiles
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from search" -s h -l help -d 'Print help'
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from labels" -l since -r
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from labels" -l from -r
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from labels" -l to -r
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from labels" -l datasource -r
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from labels" -l profile -d 'Comma-separated profile names' -r
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from labels" -l output -r -f -a "json\t''
+table\t''"
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from labels" -l url -r
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from labels" -l token -r
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from labels" -l username -r
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from labels" -l password -r
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from labels" -l all-profiles
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from labels" -s h -l help -d 'Print help'
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from label-values" -l since -r
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from label-values" -l from -r
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from label-values" -l to -r
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from label-values" -l datasource -r
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from label-values" -l profile -d 'Comma-separated profile names' -r
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from label-values" -l output -r -f -a "json\t''
+table\t''"
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from label-values" -l url -r
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from label-values" -l token -r
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from label-values" -l username -r
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from label-values" -l password -r
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from label-values" -l all-profiles
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from label-values" -s h -l help -d 'Print help'
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from help" -f -a "search"
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from help" -f -a "labels"
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from help" -f -a "label-values"
+complete -c gcli -n "__fish_gcli_using_subcommand logs; and __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c gcli -n "__fish_gcli_using_subcommand metrics; and not __fish_seen_subcommand_from instant range help" -l profile -d 'Comma-separated profile names' -r
+complete -c gcli -n "__fish_gcli_using_subcommand metrics; and not __fish_seen_subcommand_from instant range help" -l output -r -f -a "json\t''
+table\t''"
+complete -c gcli -n "__fish_gcli_using_subcommand metrics; and not __fish_seen_subcommand_from instant range help" -l url -r
+complete -c gcli -n "__fish_gcli_using_subcommand metrics; and not __fish_seen_subcommand_from instant range help" -l token -r
+complete -c gcli -n "__fish_gcli_using_subcommand metrics; and not __fish_seen_subcommand_from instant range help" -l username -r
+complete -c gcli -n "__fish_gcli_using_subcommand metrics; and not __fish_seen_subcommand_from instant range help" -l password -r
+complete -c gcli -n "__fish_gcli_using_subcommand metrics; and not __fish_seen_subcommand_from instant range help" -l all-profiles
+complete -c gcli -n "__fish_gcli_using_subcommand metrics; and not __fish_seen_subcommand_from instant range help" -s h -l help -d 'Print help'
+complete -c gcli -n "__fish_gcli_using_subcommand metrics; and not __fish_seen_subcommand_from instant range help" -f -a "instant"
+complete -c gcli -n "__fish_gcli_using_subcommand metrics; and not __fish_seen_subcommand_from instant range help" -f -a "range"
+complete -c gcli -n "__fish_gcli_using_subcommand metrics; and not __fish_seen_subcommand_from instant range help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c gcli -n "__fish_gcli_using_subcommand metrics; and __fish_seen_subcommand_from instant" -l at -r
+complete -c gcli -n "__fish_gcli_using_subcommand metrics; and __fish_seen_subcommand_from instant" -l datasource -r
+complete -c gcli -n "__fish_gcli_using_subcommand metrics; and __fish_seen_subcommand_from instant" -l profile -d 'Comma-separated profile names' -r
+complete -c gcli -n "__fish_gcli_using_subcommand metrics; and __fish_seen_subcommand_from instant" -l output -r -f -a "json\t''
+table\t''"
+complete -c gcli -n "__fish_gcli_using_subcommand metrics; and __fish_seen_subcommand_from instant" -l url -r
+complete -c gcli -n "__fish_gcli_using_subcommand metrics; and __fish_seen_subcommand_from instant" -l token -r
+complete -c gcli -n "__fish_gcli_using_subcommand metrics; and __fish_seen_subcommand_from instant" -l username -r
+complete -c gcli -n "__fish_gcli_using_subcommand metrics; and __fish_seen_subcommand_from instant" -l password -r
+complete -c gcli -n "__fish_gcli_using_subcommand metrics; and __fish_seen_subcommand_from instant" -l all-profiles
+complete -c gcli -n "__fish_gcli_using_subcommand metrics; and __fish_seen_subcommand_from instant" -s h -l help -d 'Print help'
+complete -c gcli -n "__fish_gcli_using_subcommand metrics; and __fish_seen_subcommand_from range" -l since -r
+complete -c gcli -n "__fish_gcli_using_subcommand metrics; and __fish_seen_subcommand_from range" -l from -r
+complete -c gcli -n "__fish_gcli_using_subcommand metrics; and __fish_seen_subcommand_from range" -l to -r
+complete -c gcli -n "__fish_gcli_using_subcommand metrics; and __fish_seen_subcommand_from range" -l datasource -r
+complete -c gcli -n "__fish_gcli_using_subcommand metrics; and __fish_seen_subcommand_from range" -l step -r
+complete -c gcli -n "__fish_gcli_using_subcommand metrics; and __fish_seen_subcommand_from range" -l profile -d 'Comma-separated profile names' -r
+complete -c gcli -n "__fish_gcli_using_subcommand metrics; and __fish_seen_subcommand_from range" -l output -r -f -a "json\t''
+table\t''"
+complete -c gcli -n "__fish_gcli_using_subcommand metrics; and __fish_seen_subcommand_from range" -l url -r
+complete -c gcli -n "__fish_gcli_using_subcommand metrics; and __fish_seen_subcommand_from range" -l token -r
+complete -c gcli -n "__fish_gcli_using_subcommand metrics; and __fish_seen_subcommand_from range" -l username -r
+complete -c gcli -n "__fish_gcli_using_subcommand metrics; and __fish_seen_subcommand_from range" -l password -r
+complete -c gcli -n "__fish_gcli_using_subcommand metrics; and __fish_seen_subcommand_from range" -l all-profiles
+complete -c gcli -n "__fish_gcli_using_subcommand metrics; and __fish_seen_subcommand_from range" -s h -l help -d 'Print help'
+complete -c gcli -n "__fish_gcli_using_subcommand metrics; and __fish_seen_subcommand_from help" -f -a "instant"
+complete -c gcli -n "__fish_gcli_using_subcommand metrics; and __fish_seen_subcommand_from help" -f -a "range"
+complete -c gcli -n "__fish_gcli_using_subcommand metrics; and __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c gcli -n "__fish_gcli_using_subcommand traces; and not __fish_seen_subcommand_from get search help" -l profile -d 'Comma-separated profile names' -r
+complete -c gcli -n "__fish_gcli_using_subcommand traces; and not __fish_seen_subcommand_from get search help" -l output -r -f -a "json\t''
+table\t''"
+complete -c gcli -n "__fish_gcli_using_subcommand traces; and not __fish_seen_subcommand_from get search help" -l url -r
+complete -c gcli -n "__fish_gcli_using_subcommand traces; and not __fish_seen_subcommand_from get search help" -l token -r
+complete -c gcli -n "__fish_gcli_using_subcommand traces; and not __fish_seen_subcommand_from get search help" -l username -r
+complete -c gcli -n "__fish_gcli_using_subcommand traces; and not __fish_seen_subcommand_from get search help" -l password -r
+complete -c gcli -n "__fish_gcli_using_subcommand traces; and not __fish_seen_subcommand_from get search help" -l all-profiles
+complete -c gcli -n "__fish_gcli_using_subcommand traces; and not __fish_seen_subcommand_from get search help" -s h -l help -d 'Print help'
+complete -c gcli -n "__fish_gcli_using_subcommand traces; and not __fish_seen_subcommand_from get search help" -f -a "get"
+complete -c gcli -n "__fish_gcli_using_subcommand traces; and not __fish_seen_subcommand_from get search help" -f -a "search"
+complete -c gcli -n "__fish_gcli_using_subcommand traces; and not __fish_seen_subcommand_from get search help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c gcli -n "__fish_gcli_using_subcommand traces; and __fish_seen_subcommand_from get" -l datasource -r
+complete -c gcli -n "__fish_gcli_using_subcommand traces; and __fish_seen_subcommand_from get" -l profile -d 'Comma-separated profile names' -r
+complete -c gcli -n "__fish_gcli_using_subcommand traces; and __fish_seen_subcommand_from get" -l output -r -f -a "json\t''
+table\t''"
+complete -c gcli -n "__fish_gcli_using_subcommand traces; and __fish_seen_subcommand_from get" -l url -r
+complete -c gcli -n "__fish_gcli_using_subcommand traces; and __fish_seen_subcommand_from get" -l token -r
+complete -c gcli -n "__fish_gcli_using_subcommand traces; and __fish_seen_subcommand_from get" -l username -r
+complete -c gcli -n "__fish_gcli_using_subcommand traces; and __fish_seen_subcommand_from get" -l password -r
+complete -c gcli -n "__fish_gcli_using_subcommand traces; and __fish_seen_subcommand_from get" -l all-profiles
+complete -c gcli -n "__fish_gcli_using_subcommand traces; and __fish_seen_subcommand_from get" -s h -l help -d 'Print help'
+complete -c gcli -n "__fish_gcli_using_subcommand traces; and __fish_seen_subcommand_from search" -l since -r
+complete -c gcli -n "__fish_gcli_using_subcommand traces; and __fish_seen_subcommand_from search" -l from -r
+complete -c gcli -n "__fish_gcli_using_subcommand traces; and __fish_seen_subcommand_from search" -l to -r
+complete -c gcli -n "__fish_gcli_using_subcommand traces; and __fish_seen_subcommand_from search" -l datasource -r
+complete -c gcli -n "__fish_gcli_using_subcommand traces; and __fish_seen_subcommand_from search" -l limit -r
+complete -c gcli -n "__fish_gcli_using_subcommand traces; and __fish_seen_subcommand_from search" -l profile -d 'Comma-separated profile names' -r
+complete -c gcli -n "__fish_gcli_using_subcommand traces; and __fish_seen_subcommand_from search" -l output -r -f -a "json\t''
+table\t''"
+complete -c gcli -n "__fish_gcli_using_subcommand traces; and __fish_seen_subcommand_from search" -l url -r
+complete -c gcli -n "__fish_gcli_using_subcommand traces; and __fish_seen_subcommand_from search" -l token -r
+complete -c gcli -n "__fish_gcli_using_subcommand traces; and __fish_seen_subcommand_from search" -l username -r
+complete -c gcli -n "__fish_gcli_using_subcommand traces; and __fish_seen_subcommand_from search" -l password -r
+complete -c gcli -n "__fish_gcli_using_subcommand traces; and __fish_seen_subcommand_from search" -l all-profiles
+complete -c gcli -n "__fish_gcli_using_subcommand traces; and __fish_seen_subcommand_from search" -s h -l help -d 'Print help'
+complete -c gcli -n "__fish_gcli_using_subcommand traces; and __fish_seen_subcommand_from help" -f -a "get"
+complete -c gcli -n "__fish_gcli_using_subcommand traces; and __fish_seen_subcommand_from help" -f -a "search"
+complete -c gcli -n "__fish_gcli_using_subcommand traces; and __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c gcli -n "__fish_gcli_using_subcommand completions" -l profile -d 'Comma-separated profile names' -r
+complete -c gcli -n "__fish_gcli_using_subcommand completions" -l output -r -f -a "json\t''
+table\t''"
+complete -c gcli -n "__fish_gcli_using_subcommand completions" -l url -r
+complete -c gcli -n "__fish_gcli_using_subcommand completions" -l token -r
+complete -c gcli -n "__fish_gcli_using_subcommand completions" -l username -r
+complete -c gcli -n "__fish_gcli_using_subcommand completions" -l password -r
+complete -c gcli -n "__fish_gcli_using_subcommand completions" -l all-profiles
+complete -c gcli -n "__fish_gcli_using_subcommand completions" -s h -l help -d 'Print help'
+complete -c gcli -n "__fish_gcli_using_subcommand help; and not __fish_seen_subcommand_from profile health datasources logs metrics traces completions help" -f -a "profile"
+complete -c gcli -n "__fish_gcli_using_subcommand help; and not __fish_seen_subcommand_from profile health datasources logs metrics traces completions help" -f -a "health"
+complete -c gcli -n "__fish_gcli_using_subcommand help; and not __fish_seen_subcommand_from profile health datasources logs metrics traces completions help" -f -a "datasources"
+complete -c gcli -n "__fish_gcli_using_subcommand help; and not __fish_seen_subcommand_from profile health datasources logs metrics traces completions help" -f -a "logs"
+complete -c gcli -n "__fish_gcli_using_subcommand help; and not __fish_seen_subcommand_from profile health datasources logs metrics traces completions help" -f -a "metrics"
+complete -c gcli -n "__fish_gcli_using_subcommand help; and not __fish_seen_subcommand_from profile health datasources logs metrics traces completions help" -f -a "traces"
+complete -c gcli -n "__fish_gcli_using_subcommand help; and not __fish_seen_subcommand_from profile health datasources logs metrics traces completions help" -f -a "completions"
+complete -c gcli -n "__fish_gcli_using_subcommand help; and not __fish_seen_subcommand_from profile health datasources logs metrics traces completions help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c gcli -n "__fish_gcli_using_subcommand help; and __fish_seen_subcommand_from profile" -f -a "add"
+complete -c gcli -n "__fish_gcli_using_subcommand help; and __fish_seen_subcommand_from profile" -f -a "list"
+complete -c gcli -n "__fish_gcli_using_subcommand help; and __fish_seen_subcommand_from profile" -f -a "use"
+complete -c gcli -n "__fish_gcli_using_subcommand help; and __fish_seen_subcommand_from profile" -f -a "remove"
+complete -c gcli -n "__fish_gcli_using_subcommand help; and __fish_seen_subcommand_from profile" -f -a "set-token"
+complete -c gcli -n "__fish_gcli_using_subcommand help; and __fish_seen_subcommand_from logs" -f -a "search"
+complete -c gcli -n "__fish_gcli_using_subcommand help; and __fish_seen_subcommand_from logs" -f -a "labels"
+complete -c gcli -n "__fish_gcli_using_subcommand help; and __fish_seen_subcommand_from logs" -f -a "label-values"
+complete -c gcli -n "__fish_gcli_using_subcommand help; and __fish_seen_subcommand_from metrics" -f -a "instant"
+complete -c gcli -n "__fish_gcli_using_subcommand help; and __fish_seen_subcommand_from metrics" -f -a "range"
+complete -c gcli -n "__fish_gcli_using_subcommand help; and __fish_seen_subcommand_from traces" -f -a "get"
+complete -c gcli -n "__fish_gcli_using_subcommand help; and __fish_seen_subcommand_from traces" -f -a "search"
+--- stderr ---
+--- exit: 0 ---

@@ -1,0 +1,5 @@
+$ gcli metrics range up --from 2026-08-28T14:00:00Z --to 2026-08-28T15:00:00Z
+--- stdout ---
+[{"metric":{"job":"api"},"ts":1759372700,"value":"1"},{"metric":{"job":"api"},"ts":1759372800,"value":"2"},{"metric":{"job":"zeta"},"ts":1759372700,"value":"4"},{"metric":{"job":"zeta"},"ts":1759372800,"value":"5"}]
+--- stderr ---
+--- exit: 0 ---

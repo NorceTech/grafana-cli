@@ -1,0 +1,5 @@
+$ gcli health (x2, cached token)
+--- stdout ---
+{"commit":"c1","database":"ok","version":"11.4.0"}
+--- stderr ---
+--- exit: 0 ---

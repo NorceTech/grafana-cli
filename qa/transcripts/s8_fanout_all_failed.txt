@@ -1,0 +1,6 @@
+$ gcli --profile a,b health
+--- stdout ---
+--- stderr ---
+{"error":{"kind":"http","message":"boom","profile":"a","status":500}}
+{"error":{"kind":"http","message":"boom","profile":"b","status":500}}
+--- exit: 1 ---
