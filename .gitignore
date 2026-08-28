@@ -1,3 +1,6 @@
 target/
 result
 qa/
+.direnv/
+.DS_Store
+.omo/
