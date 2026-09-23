@@ -11,7 +11,7 @@ One module per command family; each turns Grafana datasource-proxy JSON into a `
 | Output enum, shared window args, stub guards | `mod.rs`                      | `CommandOutput`, `QueryWindow`, `*_are_implemented` |
 | Loki: `search`, `labels`, `label_values`     | `logs.rs`                     | `loki_context` resolves window + datasource once    |
 | Prometheus: `instant`, `range`               | `metrics.rs`                  | `prom_result` guards the envelope, `flatten_matrix` |
-| Tempo: `get`, `search`                       | `traces.rs`                   | `get` returns `Raw`; table falls back to raw JSON   |
+| Tempo: `get`, `search`                       | `traces.rs`                   | `get` returns `Raw` OTLP; table = row per span      |
 | `health`, `datasources`                      | `health.rs`, `datasources.rs` | no datasource resolution                            |
 | Profile add/list/use/remove/set-token        | `profile.rs`                  | sync, works on `Config`, never fans out             |
 

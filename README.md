@@ -310,11 +310,19 @@ $ gcli metrics range up --from 2026-08-28T14:00:00Z --to 2026-08-28T15:00:00Z
 
 `Usage: gcli traces get [OPTIONS] <TRACE_ID>` and `Usage: gcli traces search [OPTIONS] <QUERY>`
 
-Search queries are TraceQL; `--limit` defaults to 20.
+Search queries are TraceQL; `--limit` defaults to 20. `traces get` passes Tempo's trace JSON (OpenTelemetry `batches`) through unchanged; `--output table` lists one row per span, ordered by start time.
 
 ```console
 $ gcli traces get abc123
-{"extraTempoField":{"nested":[1,2,3]},"spans":[{"durationNanos":1500000,"name":"GET /cart","resource":{"service.name":"checkout"}},{"durationNanos":2500000,"name":"SELECT items","resource":{"service.name":"cart"}}],"traceID":"abc123"}
+{"batches":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"cart"}}]},"scopeSpans":[{"scope":{"name":"db"},"spans":[{"endTimeUnixNano":"1759372800003000000","name":"SELECT items","spanId":"s2","startTimeUnixNano":"1759372800000500000","traceId":"abc123"}]}]},{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"checkout"}}]},"scopeSpans":[{"scope":{"name":"http"},"spans":[{"endTimeUnixNano":"1759372800001500000","name":"GET /cart","spanId":"s1","startTimeUnixNano":"1759372800000000000","traceId":"abc123"}]}]}]}
+$ gcli traces get abc123 --output table
++----------+--------------+----------------+
+| service  | name         | durationMillis |
++==========================================+
+| checkout | GET /cart    | 1.5            |
+|----------+--------------+----------------|
+| cart     | SELECT items | 2.5            |
++----------+--------------+----------------+
 $ gcli traces search '{ resource.service.name = "checkout" }' --from 2026-08-28T14:00:00Z --to 2026-08-28T15:00:00Z --limit 5
 [{"durationMs":42,"rootServiceName":"checkout","rootTraceName":"GET /cart","start":"2025-10-02T02:40:00.000Z","traceID":"t1"},{"durationMs":"7","rootServiceName":"api","rootTraceName":"POST /order","start":"2025-10-02T02:40:00.500Z","traceID":"t2"}]
 ```

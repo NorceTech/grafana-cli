@@ -55,30 +55,48 @@ pub async fn get(
     Ok(CommandOutput::Raw(value))
 }
 
-/// Best-effort: None on ANY shape surprise -> caller falls back to raw JSON.
+/// Span table from Tempo's `api/traces/{id}` JSON: OTLP `batches` (or the
+/// standard `resourceSpans`), one per resource, spans under `scopeSpans`, u64
+/// nanos as strings. Rows are sorted by span start. Best-effort: None on ANY
+/// shape surprise -> caller falls back to raw JSON.
 fn span_rows(v: &Value) -> Option<Vec<Vec<String>>> {
-    let spans = v.get("spans")?.as_array()?;
+    let batches = v
+        .get("batches")
+        .or_else(|| v.get("resourceSpans"))?
+        .as_array()?;
+    let nanos = |span: &Value, key: &str| span.get(key)?.as_str()?.parse::<u64>().ok();
+    let mut spans: Vec<(u64, Vec<String>)> = Vec::new();
+    for batch in batches {
+        let service = batch
+            .pointer("/resource/attributes")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .find(|a| a.get("key").and_then(Value::as_str) == Some("service.name"))
+            .and_then(|a| a.pointer("/value/stringValue"))
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        for scope in batch.get("scopeSpans")?.as_array()? {
+            for span in scope.get("spans")?.as_array()? {
+                let name = span.get("name").and_then(Value::as_str)?;
+                let start = nanos(span, "startTimeUnixNano")?;
+                let end = nanos(span, "endTimeUnixNano")?;
+                spans.push((
+                    start,
+                    vec![
+                        service.to_string(),
+                        name.to_string(),
+                        format!("{}", end.saturating_sub(start) as f64 / 1e6),
+                    ],
+                ));
+            }
+        }
+    }
     if spans.is_empty() {
         return None;
     }
-    let mut rows = Vec::new();
-    for s in spans {
-        let service = s
-            .pointer("/resource/service.name")
-            .or_else(|| s.get("service.name"))
-            .and_then(Value::as_str)?;
-        let name = s.get("name").and_then(Value::as_str)?;
-        let nanos = s.get("durationNanos").and_then(|d| {
-            d.as_i64()
-                .or_else(|| d.as_str().and_then(|x| x.parse::<i64>().ok()))
-        })?;
-        rows.push(vec![
-            service.to_string(),
-            name.to_string(),
-            format!("{}", nanos as f64 / 1e6),
-        ]);
-    }
-    Some(rows)
+    spans.sort_by_key(|(start, _)| *start);
+    Some(spans.into_iter().map(|(_, row)| row).collect())
 }
 
 pub async fn search(
@@ -175,24 +193,63 @@ mod tests {
         assert_eq!(nanos_to_rfc3339(""), None);
     }
 
+    /// Shape of Tempo's `api/traces/{id}` (captured live): OTLP `batches`, one
+    /// per resource, spans under `scopeSpans`, u64 nanos as strings. Batches
+    /// are listed out of start order on purpose.
+    fn otlp_trace() -> Value {
+        json!({"batches": [
+            {"resource": {"attributes": [
+                {"key": "k8s.namespace.name", "value": {"stringValue": "shop"}},
+                {"key": "service.name", "value": {"stringValue": "cart"}}
+            ]},
+             "scopeSpans": [{"scope": {"name": "db"}, "spans": [
+                {"traceId": "t", "spanId": "s2", "name": "SELECT",
+                 "startTimeUnixNano": "1759372800000500000", "endTimeUnixNano": "1759372800003000000"}
+             ]}]},
+            {"resource": {"attributes": [
+                {"key": "service.name", "value": {"stringValue": "checkout"}}
+            ]},
+             "scopeSpans": [{"scope": {"name": "http"}, "spans": [
+                {"traceId": "t", "spanId": "s1", "name": "GET /cart",
+                 "startTimeUnixNano": "1759372800000000000", "endTimeUnixNano": "1759372800001500000"}
+             ]}]}
+        ]})
+    }
+
     #[test]
-    fn span_rows_extract_or_none() {
-        let v = json!({"traceID": "t", "spans": [
-            {"resource": {"service.name": "checkout"}, "name": "GET /cart", "durationNanos": 1500000},
-            {"resource": {"service.name": "cart"}, "name": "SELECT", "durationNanos": "2500000"}
-        ]});
+    fn span_rows_from_tempo_otlp_sorted_by_start() {
+        let expected = Some(vec![
+            vec!["checkout".into(), "GET /cart".into(), "1.5".into()],
+            vec!["cart".into(), "SELECT".into(), "2.5".into()],
+        ]);
+        assert_eq!(span_rows(&otlp_trace()), expected);
+        // OTLP's standard top-level key parses the same way.
+        let standard = json!({"resourceSpans": otlp_trace()["batches"].clone()});
+        assert_eq!(span_rows(&standard), expected);
+    }
+
+    #[test]
+    fn span_rows_missing_service_renders_empty_cell() {
+        let mut v = otlp_trace();
+        v["batches"][1]["resource"]["attributes"] = json!([]);
         assert_eq!(
-            span_rows(&v),
-            Some(vec![
-                vec!["checkout".into(), "GET /cart".into(), "1.5".into()],
-                vec!["cart".into(), "SELECT".into(), "2.5".into()]
-            ])
+            span_rows(&v).unwrap()[0],
+            ["".to_string(), "GET /cart".into(), "1.5".into()]
         );
-        // missing duration -> fallback
-        assert_eq!(span_rows(&json!({"spans": [{"name": "x"}]})), None);
-        // no spans key -> fallback
-        assert_eq!(span_rows(&json!({"traceID": "t"})), None);
-        // empty spans -> fallback
-        assert_eq!(span_rows(&json!({"spans": []})), None);
+    }
+
+    #[test]
+    fn span_rows_none_on_shape_surprise() {
+        // span without an end time -> fallback
+        let mut v = otlp_trace();
+        v["batches"][0]["scopeSpans"][0]["spans"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("endTimeUnixNano");
+        assert_eq!(span_rows(&v), None);
+        // no batches/resourceSpans (e.g. a flat `spans` list) -> fallback
+        assert_eq!(span_rows(&json!({"traceID": "t", "spans": []})), None);
+        // no spans at all -> fallback
+        assert_eq!(span_rows(&json!({"batches": []})), None);
     }
 }
