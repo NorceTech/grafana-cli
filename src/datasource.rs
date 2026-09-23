@@ -14,25 +14,23 @@ pub fn resolve<'a>(
                 message: format!("datasource '{flag}' not found"),
             });
     }
-    let candidates = |list: &[Datasource]| -> Vec<String> {
-        list.iter()
-            .map(|d| format!("{}({})", d.name, d.r#type))
-            .collect()
-    };
+    let label = |d: &Datasource| format!("{}({})", d.name, d.r#type);
     let matching: Vec<&Datasource> = all.iter().filter(|d| d.r#type == wanted_type).collect();
     match matching.as_slice() {
+        // Nothing of the wanted type: list everything the instance has.
         [] => Err(Error::NoDatasource {
             wanted_type: wanted_type.to_string(),
-            candidates: candidates(all),
+            candidates: all.iter().map(label).collect(),
         }),
         [only] => Ok(only),
         many => {
             let defaults: Vec<&&Datasource> = many.iter().filter(|d| d.is_default).collect();
             match defaults.as_slice() {
                 [one] => Ok(one),
+                // Only the same-type datasources are real choices for --datasource.
                 _ => Err(Error::AmbiguousDatasource {
                     wanted_type: wanted_type.to_string(),
-                    candidates: candidates(all),
+                    candidates: many.iter().copied().map(label).collect(),
                 }),
             }
         }
@@ -106,6 +104,21 @@ mod tests {
             resolve(&all, "loki", None),
             Err(Error::AmbiguousDatasource { .. })
         ));
+    }
+
+    #[test]
+    fn ambiguous_lists_only_same_type_candidates() {
+        let all = vec![
+            ds(1, "u-loki", "Loki main", "loki", false),
+            ds(2, "u-loki2", "Loki spare", "loki", false),
+            ds(3, "u-prom", "Prom", "prometheus", true),
+        ];
+        match resolve(&all, "loki", None).unwrap_err() {
+            Error::AmbiguousDatasource { candidates, .. } => {
+                assert_eq!(candidates, ["Loki main(loki)", "Loki spare(loki)"]);
+            }
+            other => panic!("{other:?}"),
+        }
     }
 
     #[test]
