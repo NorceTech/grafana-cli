@@ -1,19 +1,26 @@
 use crate::Result;
 use crate::client::{Datasource, GrafanaClient};
 use crate::commands::CommandOutput;
+use crate::datasource::Kind;
 use crate::output::OutputMode;
 use serde_json::{Value, json};
+
+#[derive(clap::Args, Clone, Debug)]
+pub struct DatasourcesArgs {
+    #[arg(long, value_enum)]
+    pub r#type: Option<Kind>,
+}
 
 pub async fn run(
     client: &GrafanaClient,
     _profile: &str,
     mode: OutputMode,
-    ds_type: Option<&str>,
+    args: &DatasourcesArgs,
 ) -> Result<CommandOutput> {
     let all = client.datasources().await?;
     let list: Vec<&Datasource> = all
         .iter()
-        .filter(|d| ds_type.is_none_or(|t| d.r#type == t))
+        .filter(|d| args.r#type.is_none_or(|kind| d.r#type == kind.as_str()))
         .collect();
     if mode == OutputMode::Table {
         let rows = list

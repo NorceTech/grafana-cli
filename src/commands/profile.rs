@@ -5,19 +5,53 @@ use crate::error::Error;
 use crate::output::OutputMode;
 use serde_json::{Value, json};
 
+#[derive(clap::Subcommand, Debug)]
+#[allow(clippy::large_enum_variant)]
+pub enum ProfileCmd {
+    Add {
+        #[command(flatten)]
+        args: AddArgs,
+    },
+    List,
+    Use {
+        name: String,
+    },
+    Remove {
+        name: String,
+    },
+    SetToken {
+        name: String,
+        #[arg(long)]
+        token: String,
+    },
+}
+
+#[derive(clap::Args, Debug)]
 pub struct AddArgs {
     pub name: String,
+    #[arg(long)]
     pub url: String,
+    #[arg(long)]
     pub token: Option<String>,
+    #[arg(long, value_delimiter = ',')]
     pub token_command: Option<Vec<String>>,
+    #[arg(long)]
     pub username: Option<String>,
+    #[arg(long)]
     pub password: Option<String>,
+    #[arg(long, value_delimiter = ',')]
     pub password_command: Option<Vec<String>>,
+    #[arg(long)]
     pub token_url: Option<String>,
+    #[arg(long)]
     pub client_id: Option<String>,
+    #[arg(long)]
     pub client_secret: Option<String>,
+    #[arg(long, value_delimiter = ',')]
     pub client_secret_command: Option<Vec<String>>,
+    #[arg(long, value_delimiter = ',')]
     pub scope: Vec<String>,
+    #[arg(long)]
     pub audience: Option<String>,
 }
 

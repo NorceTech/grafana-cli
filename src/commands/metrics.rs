@@ -1,15 +1,54 @@
 use crate::Result;
 use crate::client::{Datasource, GrafanaClient};
 use crate::commands::{CommandOutput, QueryWindow};
+use crate::datasource::Kind;
 use crate::output::OutputMode;
 use crate::timeutil::{default_step_secs, resolve_window, to_epoch_secs};
 use crate::{Error, datasource};
 use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
 
+#[derive(clap::Subcommand, Clone, Debug)]
+pub enum MetricsCmd {
+    Instant(InstantArgs),
+    Range(RangeArgs),
+}
+
+#[derive(clap::Args, Clone, Debug)]
+pub struct InstantArgs {
+    pub query: String,
+    #[arg(long)]
+    pub at: Option<String>,
+    #[arg(long)]
+    pub datasource: Option<String>,
+}
+
+#[derive(clap::Args, Clone, Debug)]
+pub struct RangeArgs {
+    pub query: String,
+    #[command(flatten)]
+    pub window: QueryWindow,
+    #[arg(long)]
+    pub step: Option<String>,
+}
+
+impl MetricsCmd {
+    pub async fn run(
+        &self,
+        client: &GrafanaClient,
+        profile: &str,
+        mode: OutputMode,
+    ) -> Result<CommandOutput> {
+        match self {
+            Self::Instant(args) => instant(client, profile, mode, args).await,
+            Self::Range(args) => range(client, profile, mode, args).await,
+        }
+    }
+}
+
 async fn resolve_ds(client: &GrafanaClient, flag: Option<&str>) -> Result<Datasource> {
     let all = client.datasources().await?;
-    Ok(datasource::resolve(&all, "prometheus", flag)?.clone())
+    Ok(datasource::resolve(&all, Kind::Prometheus, flag)?.clone())
 }
 
 /// Prometheus label string: `{k="v", ...}` with keys sorted (serde_json BTreeMap).
@@ -74,13 +113,11 @@ pub async fn instant(
     client: &GrafanaClient,
     _profile: &str,
     mode: OutputMode,
-    query: &str,
-    at: Option<&str>,
-    datasource: Option<&str>,
+    args: &InstantArgs,
 ) -> Result<CommandOutput> {
-    let ds = resolve_ds(client, datasource).await?;
-    let mut pairs = vec![("query", query.to_string())];
-    if let Some(at) = at {
+    let ds = resolve_ds(client, args.datasource.as_deref()).await?;
+    let mut pairs = vec![("query", args.query.clone())];
+    if let Some(at) = args.at.as_deref() {
         let dt = DateTime::parse_from_rfc3339(at)
             .map_err(|_| Error::Config {
                 message: format!("invalid RFC3339 timestamp (--at): '{at}'"),
@@ -168,17 +205,16 @@ pub async fn range(
     client: &GrafanaClient,
     _profile: &str,
     mode: OutputMode,
-    query: &str,
-    window: &QueryWindow,
-    step: Option<&str>,
+    args: &RangeArgs,
 ) -> Result<CommandOutput> {
+    let window = &args.window;
     let ds = resolve_ds(client, window.datasource.as_deref()).await?;
     let (start, end) = resolve_window(
         window.since.as_deref(),
         window.from.as_deref(),
         window.to.as_deref(),
     )?;
-    let step_secs = match step {
+    let step_secs = match args.step.as_deref() {
         Some(s) => {
             let secs = humantime::parse_duration(s)
                 .map_err(|_| Error::Config {
@@ -195,7 +231,7 @@ pub async fn range(
         None => default_step_secs(start, end),
     };
     let pairs = [
-        ("query", query.to_string()),
+        ("query", args.query.clone()),
         ("start", format!("{}", to_epoch_secs(start))),
         ("end", format!("{}", to_epoch_secs(end))),
         ("step", step_secs.to_string()),

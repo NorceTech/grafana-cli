@@ -1,4 +1,6 @@
-use crate::output::LogRecord;
+use crate::Result;
+use crate::client::GrafanaClient;
+use crate::output::{LogRecord, OutputMode};
 use serde_json::Value;
 
 pub mod datasources;
@@ -18,20 +20,62 @@ pub enum CommandOutput {
     Raw(Value),
 }
 
-/// Time range + datasource selection shared by every query subcommand.
-#[derive(Clone)]
+// Time range + datasource selection shared by every query subcommand.
+// Clap-derived items take `//` comments only: clap turns `///` into help text.
+#[derive(clap::Args, Clone, Debug)]
 pub struct QueryWindow {
+    #[arg(long)]
     pub since: Option<String>,
+    #[arg(long)]
     pub from: Option<String>,
+    #[arg(long)]
     pub to: Option<String>,
+    #[arg(long)]
     pub datasource: Option<String>,
+}
+
+// The subcommands that run once per selected profile; the bin flattens them
+// into its top-level `Commands`.
+#[derive(clap::Subcommand, Clone, Debug)]
+pub enum Query {
+    Health,
+    Datasources(datasources::DatasourcesArgs),
+    Logs {
+        #[command(subcommand)]
+        cmd: logs::LogsCmd,
+    },
+    Metrics {
+        #[command(subcommand)]
+        cmd: metrics::MetricsCmd,
+    },
+    Traces {
+        #[command(subcommand)]
+        cmd: traces::TracesCmd,
+    },
+}
+
+impl Query {
+    pub async fn run(
+        &self,
+        client: &GrafanaClient,
+        profile: &str,
+        mode: OutputMode,
+    ) -> Result<CommandOutput> {
+        match self {
+            Self::Health => health::run(client, profile, mode).await,
+            Self::Datasources(args) => datasources::run(client, profile, mode, args).await,
+            Self::Logs { cmd } => cmd.run(client, profile, mode).await,
+            Self::Metrics { cmd } => cmd.run(client, profile, mode).await,
+            Self::Traces { cmd } => cmd.run(client, profile, mode).await,
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::client::GrafanaClient;
     use crate::config::Config;
+    use crate::datasource::Kind;
     use crate::error::Error;
 
     fn client() -> &'static GrafanaClient {
@@ -64,11 +108,30 @@ mod tests {
         let results = vec![
             (
                 "datasources",
-                datasources::run(c, "p", m, Some("loki")).await,
+                datasources::run(
+                    c,
+                    "p",
+                    m,
+                    &datasources::DatasourcesArgs {
+                        r#type: Some(Kind::Loki),
+                    },
+                )
+                .await,
             ),
             (
                 "logs::search",
-                logs::search(c, "p", m, "q", &w, 100, "backward").await,
+                logs::search(
+                    c,
+                    "p",
+                    m,
+                    &logs::SearchArgs {
+                        query: "q".into(),
+                        window: w.clone(),
+                        limit: 100,
+                        direction: logs::Direction::Backward,
+                    },
+                )
+                .await,
             ),
             ("logs::labels", logs::labels(c, "p", &w).await),
             (
@@ -77,16 +140,58 @@ mod tests {
             ),
             (
                 "metrics::instant",
-                metrics::instant(c, "p", m, "up", None, None).await,
+                metrics::instant(
+                    c,
+                    "p",
+                    m,
+                    &metrics::InstantArgs {
+                        query: "up".into(),
+                        at: None,
+                        datasource: None,
+                    },
+                )
+                .await,
             ),
             (
                 "metrics::range",
-                metrics::range(c, "p", m, "up", &w, Some("15s")).await,
+                metrics::range(
+                    c,
+                    "p",
+                    m,
+                    &metrics::RangeArgs {
+                        query: "up".into(),
+                        window: w.clone(),
+                        step: Some("15s".into()),
+                    },
+                )
+                .await,
             ),
-            ("traces::get", traces::get(c, "p", m, "abc", None).await),
+            (
+                "traces::get",
+                traces::get(
+                    c,
+                    "p",
+                    m,
+                    &traces::GetArgs {
+                        trace_id: "abc".into(),
+                        datasource: None,
+                    },
+                )
+                .await,
+            ),
             (
                 "traces::search",
-                traces::search(c, "p", m, "q", &w, 20).await,
+                traces::search(
+                    c,
+                    "p",
+                    m,
+                    &traces::SearchArgs {
+                        query: "q".into(),
+                        window: w.clone(),
+                        limit: 20,
+                    },
+                )
+                .await,
             ),
         ];
         for (name, r) in results {

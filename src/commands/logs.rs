@@ -1,6 +1,6 @@
 use crate::client::{Datasource, GrafanaClient};
 use crate::commands::{CommandOutput, QueryWindow};
-use crate::datasource;
+use crate::datasource::{self, Kind};
 use crate::output::{LogRecord, OutputMode};
 use crate::timeutil::{resolve_window, to_ns_string};
 use crate::{Error, Result};
@@ -8,7 +8,63 @@ use chrono::{DateTime, SecondsFormat};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-const LOKI: &str = "loki";
+#[derive(clap::Subcommand, Clone, Debug)]
+pub enum LogsCmd {
+    Search(SearchArgs),
+    Labels {
+        #[command(flatten)]
+        window: QueryWindow,
+    },
+    LabelValues {
+        label: String,
+        #[command(flatten)]
+        window: QueryWindow,
+    },
+}
+
+#[derive(clap::Args, Clone, Debug)]
+pub struct SearchArgs {
+    pub query: String,
+    #[command(flatten)]
+    pub window: QueryWindow,
+    #[arg(long, default_value_t = 100)]
+    pub limit: u64,
+    #[arg(long, value_enum, default_value = "backward")]
+    pub direction: Direction,
+}
+
+#[derive(clap::ValueEnum, Clone, Copy, Debug)]
+pub enum Direction {
+    Forward,
+    Backward,
+}
+
+impl Direction {
+    /// Loki's `direction` query parameter.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Forward => "forward",
+            Self::Backward => "backward",
+        }
+    }
+}
+
+impl LogsCmd {
+    pub async fn run(
+        &self,
+        client: &GrafanaClient,
+        profile: &str,
+        mode: OutputMode,
+    ) -> Result<CommandOutput> {
+        match self {
+            Self::Search(args) => search(client, profile, mode, args).await,
+            Self::Labels { window } => labels(client, profile, window).await,
+            Self::LabelValues { label, window } => {
+                label_values(client, profile, label, window).await
+            }
+        }
+    }
+}
 
 fn parse_error(what: &str) -> Error {
     Error::Http {
@@ -29,7 +85,7 @@ async fn loki_context(
         window.to.as_deref(),
     )?;
     let all = client.datasources().await?;
-    let ds = datasource::resolve(&all, LOKI, window.datasource.as_deref())?;
+    let ds = datasource::resolve(&all, Kind::Loki, window.datasource.as_deref())?;
     Ok((to_ns_string(start), to_ns_string(end), ds.clone()))
 }
 
@@ -44,22 +100,19 @@ pub async fn search(
     client: &GrafanaClient,
     profile: &str,
     mode: OutputMode,
-    query: &str,
-    window: &QueryWindow,
-    limit: u64,
-    direction: &str,
+    args: &SearchArgs,
 ) -> Result<CommandOutput> {
-    let (start, end, ds) = loki_context(client, window).await?;
+    let (start, end, ds) = loki_context(client, &args.window).await?;
     let value = client
         .proxy_request(
             &ds.uid,
             "loki/api/v1/query_range",
             &[
-                ("query", query.to_string()),
+                ("query", args.query.clone()),
                 ("start", start),
                 ("end", end),
-                ("limit", limit.to_string()),
-                ("direction", direction.to_string()),
+                ("limit", args.limit.to_string()),
+                ("direction", args.direction.as_str().to_string()),
             ],
         )
         .await?;

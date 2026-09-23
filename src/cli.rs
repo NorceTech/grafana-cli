@@ -1,4 +1,6 @@
 use clap::{Parser, Subcommand};
+use gcli_lib::commands::Query;
+use gcli_lib::commands::profile::ProfileCmd;
 use gcli_lib::output::OutputMode;
 
 #[derive(Parser, Debug)]
@@ -44,150 +46,10 @@ pub(crate) enum Commands {
         #[command(subcommand)]
         cmd: ProfileCmd,
     },
-    Health,
-    Datasources {
-        #[arg(long, value_enum)]
-        r#type: Option<DsType>,
-    },
-    Logs {
-        #[command(subcommand)]
-        cmd: LogsCmd,
-    },
-    Metrics {
-        #[command(subcommand)]
-        cmd: MetricsCmd,
-    },
-    Traces {
-        #[command(subcommand)]
-        cmd: TracesCmd,
-    },
+    #[command(flatten)]
+    Query(Query),
     Completions {
         shell: Shell,
-    },
-}
-
-#[derive(Subcommand, Debug)]
-#[allow(clippy::large_enum_variant)]
-pub(crate) enum ProfileCmd {
-    Add {
-        name: String,
-        #[arg(long)]
-        url: String,
-        #[arg(long)]
-        token: Option<String>,
-        #[arg(long, value_delimiter = ',')]
-        token_command: Option<Vec<String>>,
-        #[arg(long)]
-        username: Option<String>,
-        #[arg(long)]
-        password: Option<String>,
-        #[arg(long, value_delimiter = ',')]
-        password_command: Option<Vec<String>>,
-        #[arg(long)]
-        token_url: Option<String>,
-        #[arg(long)]
-        client_id: Option<String>,
-        #[arg(long)]
-        client_secret: Option<String>,
-        #[arg(long, value_delimiter = ',')]
-        client_secret_command: Option<Vec<String>>,
-        #[arg(long, value_delimiter = ',')]
-        scope: Vec<String>,
-        #[arg(long)]
-        audience: Option<String>,
-    },
-    List,
-    Use {
-        name: String,
-    },
-    Remove {
-        name: String,
-    },
-    SetToken {
-        name: String,
-        #[arg(long)]
-        token: String,
-    },
-}
-
-#[derive(clap::ValueEnum, Clone, Copy, Debug)]
-pub(crate) enum DsType {
-    Loki,
-    Prometheus,
-    Tempo,
-}
-
-#[derive(clap::Args, Debug)]
-pub(crate) struct TimeArgs {
-    #[arg(long)]
-    since: Option<String>,
-    #[arg(long)]
-    from: Option<String>,
-    #[arg(long)]
-    to: Option<String>,
-    #[arg(long)]
-    datasource: Option<String>,
-}
-
-#[derive(Subcommand, Debug)]
-pub(crate) enum LogsCmd {
-    Search {
-        query: String,
-        #[command(flatten)]
-        time: TimeArgs,
-        #[arg(long, default_value_t = 100)]
-        limit: u64,
-        #[arg(long, value_enum, default_value = "backward")]
-        direction: Direction,
-    },
-    Labels {
-        #[command(flatten)]
-        time: TimeArgs,
-    },
-    LabelValues {
-        label: String,
-        #[command(flatten)]
-        time: TimeArgs,
-    },
-}
-
-#[derive(clap::ValueEnum, Clone, Copy, Debug)]
-pub(crate) enum Direction {
-    Forward,
-    Backward,
-}
-
-#[derive(Subcommand, Debug)]
-pub(crate) enum MetricsCmd {
-    Instant {
-        query: String,
-        #[arg(long)]
-        at: Option<String>,
-        #[arg(long)]
-        datasource: Option<String>,
-    },
-    Range {
-        query: String,
-        #[command(flatten)]
-        time: TimeArgs,
-        #[arg(long)]
-        step: Option<String>,
-    },
-}
-
-#[derive(Subcommand, Debug)]
-pub(crate) enum TracesCmd {
-    Get {
-        trace_id: String,
-        #[arg(long)]
-        datasource: Option<String>,
-    },
-    Search {
-        query: String,
-        #[command(flatten)]
-        time: TimeArgs,
-        #[arg(long, default_value_t = 20)]
-        limit: u64,
     },
 }
 
@@ -198,33 +60,16 @@ pub(crate) enum Shell {
     Fish,
 }
 
-pub(crate) fn ds_type_str(t: DsType) -> &'static str {
-    match t {
-        DsType::Loki => "loki",
-        DsType::Prometheus => "prometheus",
-        DsType::Tempo => "tempo",
-    }
-}
-
-pub(crate) fn direction_str(d: Direction) -> &'static str {
-    match d {
-        Direction::Forward => "forward",
-        Direction::Backward => "backward",
-    }
-}
-
-pub(crate) fn query_window(time: &TimeArgs) -> gcli_lib::commands::QueryWindow {
-    gcli_lib::commands::QueryWindow {
-        since: time.since.clone(),
-        from: time.from.clone(),
-        to: time.to.clone(),
-        datasource: time.datasource.clone(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use clap::CommandFactory;
+    use gcli_lib::commands::QueryWindow;
+    use gcli_lib::commands::datasources::DatasourcesArgs;
+    use gcli_lib::commands::logs::{self, Direction, LogsCmd};
+    use gcli_lib::commands::metrics::{InstantArgs, MetricsCmd, RangeArgs};
+    use gcli_lib::commands::profile::AddArgs;
+    use gcli_lib::commands::traces::{self, GetArgs, TracesCmd};
+    use gcli_lib::datasource::Kind;
     use gcli_lib::output::OutputMode;
 
     use super::*;
@@ -265,7 +110,7 @@ mod tests {
         assert_eq!(c.token.as_deref(), Some("t"));
         assert_eq!(c.username.as_deref(), Some("u"));
         assert_eq!(c.password.as_deref(), Some("p"));
-        assert!(matches!(c.command, Commands::Health));
+        assert!(matches!(c.command, Commands::Query(Query::Health)));
     }
 
     #[test]
@@ -307,15 +152,18 @@ mod tests {
         let Commands::Profile {
             cmd:
                 ProfileCmd::Add {
-                    name,
-                    url,
-                    token_url,
-                    client_id,
-                    client_secret,
-                    client_secret_command,
-                    scope,
-                    audience,
-                    ..
+                    args:
+                        AddArgs {
+                            name,
+                            url,
+                            token_url,
+                            client_id,
+                            client_secret,
+                            client_secret_command,
+                            scope,
+                            audience,
+                            ..
+                        },
                 },
         } = c.command
         else {
@@ -404,39 +252,40 @@ mod tests {
     fn datasources_type_filter() {
         assert!(matches!(
             parse(&["datasources"]).command,
-            Commands::Datasources { r#type: None }
+            Commands::Query(Query::Datasources(DatasourcesArgs { r#type: None }))
         ));
-        let Commands::Datasources { r#type } = parse(&["datasources", "--type", "loki"]).command
+        let Commands::Query(Query::Datasources(DatasourcesArgs { r#type })) =
+            parse(&["datasources", "--type", "loki"]).command
         else {
             panic!()
         };
-        assert!(matches!(r#type, Some(DsType::Loki)));
+        assert!(matches!(r#type, Some(Kind::Loki)));
         parse_err(&["datasources", "--type", "influxdb"]);
     }
 
     #[test]
     fn logs_search_defaults_and_flags() {
-        let Commands::Logs {
+        let Commands::Query(Query::Logs {
             cmd:
-                LogsCmd::Search {
+                LogsCmd::Search(logs::SearchArgs {
                     query,
-                    time,
+                    window,
                     limit,
                     direction,
                     ..
-                },
-        } = parse(&["logs", "search", "{job=\"api\"}"]).command
+                }),
+        }) = parse(&["logs", "search", "{job=\"api\"}"]).command
         else {
             panic!()
         };
         assert_eq!(query, "{job=\"api\"}");
-        assert_eq!(time.since, None);
+        assert_eq!(window.since, None);
         assert_eq!(limit, 100);
         assert!(matches!(direction, Direction::Backward));
 
-        let Commands::Logs {
-            cmd: LogsCmd::Search { time, .. },
-        } = parse(&[
+        let Commands::Query(Query::Logs {
+            cmd: LogsCmd::Search(logs::SearchArgs { window, .. }),
+        }) = parse(&[
             "logs",
             "search",
             "q",
@@ -453,14 +302,14 @@ mod tests {
         else {
             panic!()
         };
-        assert_eq!(time.since.as_deref(), Some("1h"));
-        assert_eq!(time.datasource.as_deref(), Some("loki-x"));
+        assert_eq!(window.since.as_deref(), Some("1h"));
+        assert_eq!(window.datasource.as_deref(), Some("loki-x"));
     }
 
     #[test]
     fn since_and_from_both_parse() {
         // mutual exclusion is enforced in timeutil::resolve_window, not clap
-        assert!(
+        assert!(matches!(
             parse(&[
                 "logs",
                 "search",
@@ -470,39 +319,27 @@ mod tests {
                 "--from",
                 "2026-01-01T00:00:00Z"
             ])
-            .command
-            .matches_logs_search_with_since()
-        );
-    }
-
-    trait LogsSearchProbe {
-        fn matches_logs_search_with_since(&self) -> bool;
-    }
-    impl LogsSearchProbe for Commands {
-        fn matches_logs_search_with_since(&self) -> bool {
-            matches!(
-                self,
-                Commands::Logs {
-                    cmd: LogsCmd::Search {
-                        time: TimeArgs { since: Some(_), .. },
-                        ..
-                    }
-                }
-            )
-        }
+            .command,
+            Commands::Query(Query::Logs {
+                cmd: LogsCmd::Search(logs::SearchArgs {
+                    window: QueryWindow { since: Some(_), .. },
+                    ..
+                })
+            })
+        ));
     }
 
     #[test]
     fn logs_labels_and_label_values() {
         assert!(matches!(
             parse(&["logs", "labels"]).command,
-            Commands::Logs {
+            Commands::Query(Query::Logs {
                 cmd: LogsCmd::Labels { .. }
-            }
+            })
         ));
-        let Commands::Logs {
-            cmd: LogsCmd::LabelValues { label, time },
-        } = parse(&[
+        let Commands::Query(Query::Logs {
+            cmd: LogsCmd::LabelValues { label, window },
+        }) = parse(&[
             "logs",
             "label-values",
             "job",
@@ -518,26 +355,30 @@ mod tests {
             panic!()
         };
         assert_eq!(label, "job");
-        assert_eq!(time.from.as_deref(), Some("2026-01-01T00:00:00Z"));
-        assert_eq!(time.to.as_deref(), Some("2026-01-02T00:00:00Z"));
+        assert_eq!(window.from.as_deref(), Some("2026-01-01T00:00:00Z"));
+        assert_eq!(window.to.as_deref(), Some("2026-01-02T00:00:00Z"));
     }
 
     #[test]
     fn metrics_instant_and_range() {
-        let Commands::Metrics {
-            cmd: MetricsCmd::Instant { query, at, .. },
-        } = parse(&["metrics", "instant", "up", "--at", "2026-01-01T00:00:00Z"]).command
+        let Commands::Query(Query::Metrics {
+            cmd: MetricsCmd::Instant(InstantArgs { query, at, .. }),
+        }) = parse(&["metrics", "instant", "up", "--at", "2026-01-01T00:00:00Z"]).command
         else {
             panic!()
         };
         assert_eq!(query, "up");
         assert_eq!(at.as_deref(), Some("2026-01-01T00:00:00Z"));
 
-        let Commands::Metrics {
-            cmd: MetricsCmd::Range {
-                query, time, step, ..
-            },
-        } = parse(&[
+        let Commands::Query(Query::Metrics {
+            cmd:
+                MetricsCmd::Range(RangeArgs {
+                    query,
+                    window,
+                    step,
+                    ..
+                }),
+        }) = parse(&[
             "metrics",
             "range",
             "up",
@@ -553,31 +394,31 @@ mod tests {
             panic!()
         };
         assert_eq!(query, "up");
-        assert_eq!(time.since.as_deref(), Some("1h"));
+        assert_eq!(window.since.as_deref(), Some("1h"));
         assert_eq!(step.as_deref(), Some("15s"));
     }
 
     #[test]
     fn traces_get_and_search() {
-        let Commands::Traces {
-            cmd: TracesCmd::Get { trace_id, .. },
-        } = parse(&["traces", "get", "abc123", "--datasource", "tempo-x"]).command
+        let Commands::Query(Query::Traces {
+            cmd: TracesCmd::Get(GetArgs { trace_id, .. }),
+        }) = parse(&["traces", "get", "abc123", "--datasource", "tempo-x"]).command
         else {
             panic!()
         };
         assert_eq!(trace_id, "abc123");
 
-        let Commands::Traces {
-            cmd: TracesCmd::Search { query, limit, .. },
-        } = parse(&["traces", "search", "{ duration > 1s }", "--limit", "50"]).command
+        let Commands::Query(Query::Traces {
+            cmd: TracesCmd::Search(traces::SearchArgs { query, limit, .. }),
+        }) = parse(&["traces", "search", "{ duration > 1s }", "--limit", "50"]).command
         else {
             panic!()
         };
         assert_eq!(query, "{ duration > 1s }");
         assert_eq!(limit, 50);
-        let Commands::Traces {
-            cmd: TracesCmd::Search { limit, .. },
-        } = parse(&["traces", "search", "q"]).command
+        let Commands::Query(Query::Traces {
+            cmd: TracesCmd::Search(traces::SearchArgs { limit, .. }),
+        }) = parse(&["traces", "search", "q"]).command
         else {
             panic!()
         };

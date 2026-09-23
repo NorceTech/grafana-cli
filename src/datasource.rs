@@ -1,9 +1,28 @@
 use crate::client::Datasource;
 use crate::{Error, Result};
 
+// The datasource types gcli queries; also the values of `datasources --type`.
+#[derive(clap::ValueEnum, Clone, Copy, Debug)]
+pub enum Kind {
+    Loki,
+    Prometheus,
+    Tempo,
+}
+
+impl Kind {
+    /// Grafana's datasource `type` string.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Loki => "loki",
+            Self::Prometheus => "prometheus",
+            Self::Tempo => "tempo",
+        }
+    }
+}
+
 pub fn resolve<'a>(
     all: &'a [Datasource],
-    wanted_type: &str,
+    kind: Kind,
     flag: Option<&str>,
 ) -> Result<&'a Datasource> {
     if let Some(flag) = flag {
@@ -14,6 +33,7 @@ pub fn resolve<'a>(
                 message: format!("datasource '{flag}' not found"),
             });
     }
+    let wanted_type = kind.as_str();
     let label = |d: &Datasource| format!("{}({})", d.name, d.r#type);
     let matching: Vec<&Datasource> = all.iter().filter(|d| d.r#type == wanted_type).collect();
     match matching.as_slice() {
@@ -64,14 +84,14 @@ mod tests {
     #[test]
     fn single_of_type_wins() {
         let all = fixtures();
-        assert_eq!(resolve(&all, "prometheus", None).unwrap().uid, "u-prom");
-        assert_eq!(resolve(&all, "tempo", None).unwrap().uid, "u-tempo");
+        assert_eq!(resolve(&all, Kind::Prometheus, None).unwrap().uid, "u-prom");
+        assert_eq!(resolve(&all, Kind::Tempo, None).unwrap().uid, "u-tempo");
     }
 
     #[test]
     fn default_of_type_wins_over_multiple() {
         let all = fixtures();
-        assert_eq!(resolve(&all, "loki", None).unwrap().uid, "u-loki");
+        assert_eq!(resolve(&all, Kind::Loki, None).unwrap().uid, "u-loki");
     }
 
     #[test]
@@ -81,7 +101,7 @@ mod tests {
             ds(2, "u-loki2", "Loki spare", "loki", false),
             ds(3, "u-prom", "Prom", "prometheus", true),
         ];
-        let err = resolve(&all, "loki", None).unwrap_err();
+        let err = resolve(&all, Kind::Loki, None).unwrap_err();
         match err {
             Error::AmbiguousDatasource {
                 wanted_type,
@@ -101,7 +121,7 @@ mod tests {
     fn two_defaults_is_ambiguous() {
         let all = vec![ds(1, "a", "A", "loki", true), ds(2, "b", "B", "loki", true)];
         assert!(matches!(
-            resolve(&all, "loki", None),
+            resolve(&all, Kind::Loki, None),
             Err(Error::AmbiguousDatasource { .. })
         ));
     }
@@ -113,7 +133,7 @@ mod tests {
             ds(2, "u-loki2", "Loki spare", "loki", false),
             ds(3, "u-prom", "Prom", "prometheus", true),
         ];
-        match resolve(&all, "loki", None).unwrap_err() {
+        match resolve(&all, Kind::Loki, None).unwrap_err() {
             Error::AmbiguousDatasource { candidates, .. } => {
                 assert_eq!(candidates, ["Loki main(loki)", "Loki spare(loki)"]);
             }
@@ -123,15 +143,18 @@ mod tests {
 
     #[test]
     fn none_of_type_lists_candidates() {
-        let all = fixtures();
-        let err = resolve(&all, "influxdb", None).unwrap_err();
+        let all: Vec<Datasource> = fixtures()
+            .into_iter()
+            .filter(|d| d.r#type != "tempo")
+            .collect();
+        let err = resolve(&all, Kind::Tempo, None).unwrap_err();
         match err {
             Error::NoDatasource {
                 wanted_type,
                 candidates,
             } => {
-                assert_eq!(wanted_type, "influxdb");
-                assert_eq!(candidates.len(), 4);
+                assert_eq!(wanted_type, "tempo");
+                assert_eq!(candidates.len(), 3);
                 assert!(candidates.iter().all(|c| c.contains('(')));
             }
             other => panic!("{other:?}"),
@@ -142,16 +165,19 @@ mod tests {
     fn flag_matches_by_uid_or_name() {
         let all = fixtures();
         assert_eq!(
-            resolve(&all, "loki", Some("u-loki2")).unwrap().uid,
+            resolve(&all, Kind::Loki, Some("u-loki2")).unwrap().uid,
             "u-loki2"
         );
-        assert_eq!(resolve(&all, "loki", Some("Prom")).unwrap().uid, "u-prom");
+        assert_eq!(
+            resolve(&all, Kind::Loki, Some("Prom")).unwrap().uid,
+            "u-prom"
+        );
     }
 
     #[test]
     fn flag_unknown_is_config_error() {
         let all = fixtures();
-        let err = resolve(&all, "loki", Some("nope")).unwrap_err();
+        let err = resolve(&all, Kind::Loki, Some("nope")).unwrap_err();
         assert!(matches!(err, Error::Config { message } if message.contains("nope")));
     }
 }

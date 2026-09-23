@@ -1,15 +1,51 @@
 use crate::Result;
 use crate::client::{Datasource, GrafanaClient};
 use crate::commands::{CommandOutput, QueryWindow};
-use crate::datasource;
+use crate::datasource::{self, Kind};
 use crate::output::OutputMode;
 use crate::timeutil::resolve_window;
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::{Value, json};
 
+#[derive(clap::Subcommand, Clone, Debug)]
+pub enum TracesCmd {
+    Get(GetArgs),
+    Search(SearchArgs),
+}
+
+#[derive(clap::Args, Clone, Debug)]
+pub struct GetArgs {
+    pub trace_id: String,
+    #[arg(long)]
+    pub datasource: Option<String>,
+}
+
+#[derive(clap::Args, Clone, Debug)]
+pub struct SearchArgs {
+    pub query: String,
+    #[command(flatten)]
+    pub window: QueryWindow,
+    #[arg(long, default_value_t = 20)]
+    pub limit: u64,
+}
+
+impl TracesCmd {
+    pub async fn run(
+        &self,
+        client: &GrafanaClient,
+        profile: &str,
+        mode: OutputMode,
+    ) -> Result<CommandOutput> {
+        match self {
+            Self::Get(args) => get(client, profile, mode, args).await,
+            Self::Search(args) => search(client, profile, mode, args).await,
+        }
+    }
+}
+
 async fn resolve_ds(client: &GrafanaClient, flag: Option<&str>) -> Result<Datasource> {
     let all = client.datasources().await?;
-    Ok(datasource::resolve(&all, "tempo", flag)?.clone())
+    Ok(datasource::resolve(&all, Kind::Tempo, flag)?.clone())
 }
 
 fn cell(v: &Value) -> String {
@@ -33,12 +69,11 @@ pub async fn get(
     client: &GrafanaClient,
     _profile: &str,
     mode: OutputMode,
-    trace_id: &str,
-    datasource: Option<&str>,
+    args: &GetArgs,
 ) -> Result<CommandOutput> {
-    let ds = resolve_ds(client, datasource).await?;
+    let ds = resolve_ds(client, args.datasource.as_deref()).await?;
     let value = client
-        .proxy_request(&ds.uid, &format!("api/traces/{trace_id}"), &[])
+        .proxy_request(&ds.uid, &format!("api/traces/{}", args.trace_id), &[])
         .await?;
     if mode == OutputMode::Table {
         if let Some(rows) = span_rows(&value) {
@@ -103,10 +138,9 @@ pub async fn search(
     client: &GrafanaClient,
     _profile: &str,
     mode: OutputMode,
-    query: &str,
-    window: &QueryWindow,
-    limit: u64,
+    args: &SearchArgs,
 ) -> Result<CommandOutput> {
+    let window = &args.window;
     let ds = resolve_ds(client, window.datasource.as_deref()).await?;
     let (start, end) = resolve_window(
         window.since.as_deref(),
@@ -117,10 +151,10 @@ pub async fn search(
     // fraction is a 400. Floor the start and ceil the end to cover the window.
     let end_secs = end.timestamp() + i64::from(end.timestamp_subsec_nanos() > 0);
     let pairs = [
-        ("q", query.to_string()),
+        ("q", args.query.clone()),
         ("start", start.timestamp().to_string()),
         ("end", end_secs.to_string()),
-        ("limit", limit.to_string()),
+        ("limit", args.limit.to_string()),
     ];
     let body = client.proxy_request(&ds.uid, "api/search", &pairs).await?;
     let traces = body
