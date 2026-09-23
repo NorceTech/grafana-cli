@@ -98,14 +98,7 @@ impl GrafanaClient {
                 oauth_attempt += 1;
                 continue;
             }
-            let message = serde_json::from_str::<Value>(&body)
-                .ok()
-                .and_then(|v| v.get("message").and_then(Value::as_str).map(str::to_string));
-            return Err(Error::Http {
-                status: status.as_u16(),
-                body,
-                message,
-            });
+            return Err(Error::http(status.as_u16(), body));
         }
     }
 }

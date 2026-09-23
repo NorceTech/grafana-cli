@@ -28,6 +28,41 @@ pub enum Error {
     },
 }
 
+/// Longest plain-text body kept as an `http` error message, in chars.
+const MESSAGE_CHARS: usize = 500;
+
+impl Error {
+    /// A non-2xx reply. `message` is the upstream's own error text: the JSON
+    /// `message` field (Grafana), else the JSON `error` field (Prometheus,
+    /// Loki), else the plain-text body (Loki and Tempo answer in text),
+    /// trimmed and cut to 500 chars; `None` only for an empty body.
+    pub fn http(status: u16, body: String) -> Self {
+        let json_text = serde_json::from_str::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|v| {
+                ["message", "error"]
+                    .into_iter()
+                    .find_map(|key| v.get(key)?.as_str().map(str::to_string))
+            });
+        let message = json_text.or_else(|| {
+            let text = body.trim();
+            (!text.is_empty()).then(|| clip(text, MESSAGE_CHARS).to_string())
+        });
+        Self::Http {
+            status,
+            body,
+            message,
+        }
+    }
+}
+
+/// `text` cut to at most `max` chars; the cut never splits a char.
+fn clip(text: &str, max: usize) -> &str {
+    text.char_indices()
+        .nth(max)
+        .map_or(text, |(end, _)| &text[..end])
+}
+
 pub fn emit_json_error(profile: Option<&str>, err: &Error) -> String {
     let (kind, status, message) = match err {
         Error::Http {
@@ -78,17 +113,58 @@ mod tests {
         assert_eq!(v["error"]["message"], "unauthorized");
     }
 
+    fn json_message(e: &Error) -> serde_json::Value {
+        let v: serde_json::Value = serde_json::from_str(&emit_json_error(None, e)).unwrap();
+        v["error"]["message"].clone()
+    }
+
     #[test]
-    fn json_error_http_null_message() {
-        let e = Error::Http {
-            status: 500,
-            body: "oops".into(),
-            message: None,
-        };
-        let v: serde_json::Value = serde_json::from_str(&emit_json_error(None, &e)).unwrap();
-        assert!(v["error"]["profile"].is_null());
-        assert_eq!(v["error"]["status"], 500);
-        assert!(v["error"]["message"].is_null());
+    fn json_error_http_plain_text_body_is_the_message() {
+        // Tempo's reply to a fractional start, verbatim.
+        let body = "invalid start: strconv.ParseInt: parsing \"1790195939.49\": invalid syntax\n";
+
+        let e = Error::http(400, body.into());
+
+        assert_eq!(json_message(&e), body.trim());
+    }
+
+    #[test]
+    fn json_error_http_empty_body_has_null_message() {
+        for body in ["", " \n"] {
+            let e = Error::http(500, body.into());
+
+            let v: serde_json::Value = serde_json::from_str(&emit_json_error(None, &e)).unwrap();
+            assert!(v["error"]["profile"].is_null());
+            assert_eq!(v["error"]["status"], 500);
+            assert!(v["error"]["message"].is_null(), "{body:?}: {v}");
+        }
+    }
+
+    #[test]
+    fn json_error_http_prefers_the_json_message_field() {
+        let e = Error::http(
+            400,
+            r#"{"message":"grafana says","error":"upstream says"}"#.into(),
+        );
+
+        assert_eq!(json_message(&e), "grafana says");
+    }
+
+    #[test]
+    fn json_error_http_falls_back_to_the_json_error_field() {
+        let body = r#"{"status":"error","errorType":"bad_data","error":"parse error"}"#;
+
+        let e = Error::http(400, body.into());
+
+        assert_eq!(json_message(&e), "parse error");
+    }
+
+    #[test]
+    fn json_error_http_long_text_body_is_cut_to_500_chars() {
+        // Two-byte chars: a byte-based cut at 500 would split one.
+        let e = Error::http(502, "\u{e9}".repeat(600));
+
+        assert_eq!(json_message(&e), "\u{e9}".repeat(500));
     }
 
     #[test]

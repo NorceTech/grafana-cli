@@ -352,6 +352,8 @@ Every error is a single JSON line on stderr:
 
 The `error` object always has the four keys `profile`, `kind`, `status`, `message`. `profile` names the failing profile (null when none was resolved), `status` is the HTTP status code for `http` errors and null otherwise. Error kinds: `http`, `url`, `io`, `auth`, `config`, `no_datasource`, `ambiguous_datasource`.
 
+For `http` errors, `message` is the upstream's own error text: the JSON `message` field (Grafana), else the JSON `error` field (Prometheus, Loki), else the response body as plain text (Loki and Tempo answer many errors in plain text), trimmed and cut to 500 characters. It is null only when the error response has an empty body.
+
 Exit codes:
 
 | Code | Meaning                                                                                                       |
@@ -402,7 +404,7 @@ This CLI is designed to be driven by tools like you. The guarantees:
 
 - **Non-interactive.** It never prompts, never pages, never animates. If information is missing it fails immediately with a structured error.
 - **Stable stdout.** Data goes to stdout only. JSON mode is line-oriented: one JSON value or one JSONL record per line, safe for `jq` and streaming parsers.
-- **Stable error contract.** All errors are one JSON line on stderr with the fixed keys `profile`, `kind`, `status`, `message`.
+- **Stable error contract.** All errors are one JSON line on stderr with the fixed keys `profile`, `kind`, `status`, `message`. For `http` errors, `message` carries the upstream's own error text (a LogQL, PromQL or TraceQL parse error, say); it is null only when the response body was empty.
 - **Meaningful exit codes.** 0 ok (including partial multi-profile success), 1 transport failure, 2 bad invocation (config/auth/datasource).
 - **Auto JSON.** Piping the output selects JSON mode without extra flags, but prefer explicit `--output json` for determinism.
 

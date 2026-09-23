@@ -45,4 +45,4 @@ One module per command family; each owns its clap types and turns Grafana dataso
 ## ANTI-PATTERNS
 
 - An explicit `--datasource` matches uid or name with NO type check (`src/datasource.rs:28`); don't count on it to reject a wrong-type datasource.
-- No per-command HTTP or auth handling: `GrafanaClient::get_json` owns bearer/basic/OAuth headers, the single OAuth 401 retry and Grafana `message` extraction.
+- No per-command HTTP or auth handling: `GrafanaClient::get_json` owns bearer/basic/OAuth headers, the single OAuth 401 retry and, through `Error::http`, the non-2xx error message (JSON `message`, else JSON `error`, else the plain-text body).

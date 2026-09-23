@@ -400,3 +400,40 @@ async fn s4_logs_invalid_logql_surfaces_grafana_message() {
         &out,
     );
 }
+
+// Loki (like Tempo) answers a bad query in plain text, not JSON: that text is
+// the error message instead of null.
+#[tokio::test]
+async fn s4_logs_plain_text_error_is_the_message() {
+    let server = MockServer::start().await;
+    loki_datasources_mock().expect(1).mount(&server).await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/api/datasources/proxy/uid/loki1/loki/api/v1/query_range",
+        ))
+        .respond_with(
+            ResponseTemplate::new(400).set_body_raw("parse error at line 1, col 5\n", "text/plain"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = token_config(&server.uri());
+    let out = run_logs(
+        &config,
+        &["logs", "search", "{job=", "--from", FROM, "--to", TO],
+    );
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "stderr: {stderr}");
+    let error: Value = serde_json::from_str(&stderr).expect("stderr JSON");
+    assert_eq!(error["error"]["kind"], "http");
+    assert_eq!(error["error"]["status"], 400);
+    assert_eq!(error["error"]["message"], "parse error at line 1, col 5");
+    server.verify().await;
+    write_transcript(
+        "s4_logs_plain_text_error.txt",
+        "gcli logs search '{job=' --from 2026-08-28T14:00:00Z --to 2026-08-28T15:00:00Z",
+        &out,
+    );
+}
