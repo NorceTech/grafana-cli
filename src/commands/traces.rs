@@ -3,7 +3,7 @@ use crate::client::{Datasource, GrafanaClient};
 use crate::commands::{CommandOutput, QueryWindow};
 use crate::datasource;
 use crate::output::OutputMode;
-use crate::timeutil::{resolve_window, to_epoch_secs};
+use crate::timeutil::resolve_window;
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::{Value, json};
 
@@ -95,10 +95,13 @@ pub async fn search(
         window.from.as_deref(),
         window.to.as_deref(),
     )?;
+    // Tempo parses start/end with strconv.ParseInt: whole seconds only, a
+    // fraction is a 400. Floor the start and ceil the end to cover the window.
+    let end_secs = end.timestamp() + i64::from(end.timestamp_subsec_nanos() > 0);
     let pairs = [
         ("q", query.to_string()),
-        ("start", format!("{}", to_epoch_secs(start))),
-        ("end", format!("{}", to_epoch_secs(end))),
+        ("start", start.timestamp().to_string()),
+        ("end", end_secs.to_string()),
         ("limit", limit.to_string()),
     ];
     let body = client.proxy_request(&ds.uid, "api/search", &pairs).await?;

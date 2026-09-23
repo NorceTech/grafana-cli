@@ -9,11 +9,12 @@ const FROM: &str = "2026-08-28T14:00:00Z";
 const TO: &str = "2026-08-28T15:00:00Z";
 const TRACEQL: &str = "{ resource.service.name = \"checkout\" }";
 
-fn epoch_secs(rfc3339: &str) -> String {
-    let dt = chrono::DateTime::parse_from_rfc3339(rfc3339)
+/// Tempo search bounds are whole epoch seconds (Tempo parses them with
+/// strconv.ParseInt); derive them with chrono, independent of gcli.
+fn epoch_secs(rfc3339: &str) -> i64 {
+    chrono::DateTime::parse_from_rfc3339(rfc3339)
         .unwrap()
-        .with_timezone(&chrono::Utc);
-    format!("{}", gcli_lib::timeutil::to_epoch_secs(dt))
+        .timestamp()
 }
 
 fn config(base: &str) -> tempfile::TempDir {
@@ -115,7 +116,7 @@ async fn s7_traces_get() {
 
 #[tokio::test]
 async fn s7_traces_search() {
-    let (start, end) = (epoch_secs(FROM), epoch_secs(TO));
+    let (start, end) = (epoch_secs(FROM).to_string(), epoch_secs(TO).to_string());
 
     let server = MockServer::start().await;
     ds_mock().mount(&server).await;
@@ -147,6 +148,47 @@ async fn s7_traces_search() {
     write_transcript(
         "s7_traces_search.txt",
         "gcli traces search '{ resource.service.name = \"checkout\" }' --from 2026-08-28T14:00:00Z --to 2026-08-28T15:00:00Z --limit 5",
+        &out,
+    );
+}
+
+// Every `--since` window has sub-second bounds. Live Tempo rejects a fractional
+// start/end with 400 "invalid start: strconv.ParseInt", so the start is floored
+// and the end ceiled to keep the requested window covered.
+#[tokio::test]
+async fn s7_traces_search_subsecond_bounds_send_whole_seconds() {
+    const FROM_FRAC: &str = "2026-08-28T14:00:00.500Z";
+    const TO_FRAC: &str = "2026-08-28T15:00:00.250Z";
+    let start = epoch_secs(FROM_FRAC).to_string();
+    let end = (epoch_secs(TO_FRAC) + 1).to_string();
+
+    let server = MockServer::start().await;
+    ds_mock().mount(&server).await;
+    Mock::given(method("GET"))
+        .and(path("/api/datasources/proxy/uid/tempo1/api/search"))
+        .and(query_param("start", start.as_str()))
+        .and(query_param("end", end.as_str()))
+        .respond_with(ResponseTemplate::new(200).set_body_json(search_body()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let cfg = config(&server.uri());
+    let env = ("GCLI_CONFIG_DIR", cfg.path().to_str().unwrap());
+    let out = spawn_gcli(
+        &[
+            "traces", "search", TRACEQL, "--from", FROM_FRAC, "--to", TO_FRAC,
+        ],
+        &[env],
+    );
+
+    let stdout = assert_success(&out);
+    let records: Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(records, expected_search_records(), "{stdout}");
+    server.verify().await;
+    write_transcript(
+        "s7_traces_search_subsecond.txt",
+        "gcli traces search '{ resource.service.name = \"checkout\" }' --from 2026-08-28T14:00:00.500Z --to 2026-08-28T15:00:00.250Z",
         &out,
     );
 }

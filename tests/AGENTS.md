@@ -30,7 +30,7 @@ Shared harness, `common/mod.rs`:
 - Test shape: `#[tokio::test] async fn sN_<case>` -> `MockServer::start().await` -> mount mocks with `.expect(n)` -> `fixture_config` -> `spawn_gcli` -> assert the exit code with stderr in the failure message -> assert stdout JSON -> `server.verify().await` -> `write_transcript("sN_<case>.txt", "gcli ...", &out)`.
 - A new scenario takes the next scenario ID and writes its own transcript file.
 - `common/mod.rs` is frozen (`pipe.rs:9`). New helpers (config TOML builders, bespoke mocks, `stdout_json`) go in the file that needs them; each file already carries its own `token_config`-style builder.
-- Derive, don't trust: build expected wire params with `gcli_lib::timeutil` (`resolve_window`, `to_ns_string`, `to_epoch_secs`), never hand-computed epochs (`logs.rs:11`, `metrics.rs:12`).
+- Derive, don't trust: build expected wire params with `gcli_lib::timeutil` (`resolve_window`, `to_ns_string`, `to_epoch_secs`), or chrono `timestamp()` for Tempo's whole-second bounds, never hand-computed epochs (`logs.rs:11`, `metrics.rs:12`, `traces.rs:12`).
 - Datasource calls are mocked on the full proxy path `/api/datasources/proxy/uid/<uid>/<api path>` plus `query_param` matchers; the `datasources_json` fixture decides which uid the CLI must resolve.
 - JSON contracts are pinned by exact sorted key sets (`health_datasources.rs:76`, `ux.rs:71`), not by field presence.
 - Fixtures return data out of order on purpose (`logs.rs:40`, `metrics.rs:49`) to pin CLI-side sorting.

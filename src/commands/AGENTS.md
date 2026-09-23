@@ -20,7 +20,7 @@ One module per command family; each turns Grafana datasource-proxy JSON into a `
 - Query command: `pub async fn name(client: &GrafanaClient, profile: &str, mode: OutputMode, ...) -> crate::Result<CommandOutput>`. The bin crate's `src/app.rs` runs it once per profile through `fanout::run`; `profile` is only used to tag `LogRecord`s.
 - Pipeline: `client.datasources()` -> `datasource::resolve(&all, "loki" | "prometheus" | "tempo", flag)` -> `client.proxy_request(&ds.uid, "<api path>", &pairs)` -> reshape.
 - Proxy paths (relative, no leading slash): Loki `loki/api/v1/query_range`, `loki/api/v1/labels`, `loki/api/v1/label/{label}/values`; Prometheus `api/v1/query`, `api/v1/query_range`; Tempo `api/traces/{id}`, `api/search`. `proxy_request` is GET-only with query pairs.
-- Wire time units: Loki takes ns strings (`to_ns_string`), Prometheus and Tempo take epoch seconds (`to_epoch_secs`). Windows always come from `timeutil::resolve_window`.
+- Wire time units: Loki takes ns strings (`to_ns_string`), Prometheus fractional epoch seconds (`to_epoch_secs`), Tempo search whole epoch seconds (start floored, end ceiled; Tempo answers a fraction with 400). Windows always come from `timeutil::resolve_window`.
 - The command shapes tables itself: return `CommandOutput::Table { headers, rows }` when `mode == OutputMode::Table`, else `Json` / `Logs` / `Raw`.
 - Variants: `Logs` = `LogRecord`s rendered as JSONL; `Raw` = lossless upstream passthrough, printed exactly like `Json`; `Json` = reshaped value with stable field names.
 - `labels` and `label_values` ignore `mode` and always return a JSON array.
