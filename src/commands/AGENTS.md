@@ -44,5 +44,5 @@ One module per command family; each owns its clap types and turns Grafana dataso
 
 ## ANTI-PATTERNS
 
-- An explicit `--datasource` matches uid or name with NO type check (`src/datasource.rs:28`); don't count on it to reject a wrong-type datasource.
+- Don't make an explicit `--datasource` reject a datasource of another type: Prometheus-compatible plugins (VictoriaMetrics, Amazon Managed Prometheus) have their own type. `datasource::resolve` matches uid or name, queries the match anyway and prints one `note: datasource '<name>' is type <type>, expected <wanted>; querying it anyway` line to stderr (`type_mismatch`, `src/datasource.rs:26`).
 - No per-command HTTP or auth handling: `GrafanaClient::get_json` owns bearer/basic/OAuth headers, the single OAuth 401 retry and, through `Error::http`, the non-2xx error message (JSON `message`, else JSON `error`, else the plain-text body).

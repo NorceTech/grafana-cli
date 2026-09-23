@@ -409,6 +409,7 @@ This CLI is designed to be driven by tools like you. The guarantees:
 - **Non-interactive.** It never prompts, never pages, never animates. If information is missing it fails immediately with a structured error.
 - **Stable stdout.** Data goes to stdout only. JSON mode is line-oriented: one JSON value or one JSONL record per line, safe for `jq` and streaming parsers.
 - **Stable error contract.** All errors are one JSON line on stderr with the fixed keys `profile`, `kind`, `status`, `message`. For `http` errors, `message` carries the upstream's own error text (a LogQL, PromQL or TraceQL parse error, say); it is null only when the response body was empty. `kind: "response"` means the instance answered with a success status but a body that is not the expected JSON (an SSO login page, for example); its `message` quotes the start of that body.
+- **Notes on stderr.** Besides the JSON error lines, stderr can carry plain-text `note: ...` lines that do not change the result, for example when `--datasource` names a datasource whose type differs from the command's (gcli still queries it: Prometheus-compatible plugins such as VictoriaMetrics have their own type). Treat only the lines that parse as JSON as errors.
 - **Meaningful exit codes.** 0 ok (including partial multi-profile success), 1 upstream or transport failure (`http`, `response`, `io`, `url`), 2 bad invocation (config/auth/datasource).
 - **Auto JSON.** Piping the output selects JSON mode without extra flags, but prefer explicit `--output json` for determinism.
 

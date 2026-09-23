@@ -243,6 +243,50 @@ async fn s6_metrics_range_empty_result_is_exit_0() {
     server.verify().await;
 }
 
+// An explicit --datasource of another type is queried anyway (VictoriaMetrics
+// and other Prometheus-compatible plugins have their own type), with one note
+// on stderr saying so.
+#[tokio::test]
+async fn s6_metrics_wrong_type_datasource_is_queried_with_a_note() {
+    let server = MockServer::start().await;
+    datasources_json(json!([
+        {"id": 1, "uid": "prom1", "name": "Prom", "type": "prometheus",
+         "url": "/prom", "isDefault": true},
+        {"id": 2, "uid": "vm1", "name": "VM", "type": "victoriametrics-metrics-datasource",
+         "url": "/vm", "isDefault": false}
+    ]))
+    .mount(&server)
+    .await;
+    Mock::given(method("GET"))
+        .and(path("/api/datasources/proxy/uid/vm1/api/v1/query"))
+        .and(query_param("query", "up"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(vector_body()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let cfg = config(&server.uri());
+    let env = ("GCLI_CONFIG_DIR", cfg.path().to_str().unwrap());
+    let out = spawn_gcli(&["metrics", "instant", "up", "--datasource", "VM"], &[env]);
+
+    let stdout = assert_success(&out);
+    let records: Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(records[0]["value"], "1", "{stdout}");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let lines: Vec<&str> = stderr.lines().collect();
+    assert_eq!(lines.len(), 1, "one note: {stderr}");
+    assert!(lines[0].starts_with("note: "), "{stderr}");
+    for fact in ["'VM'", "victoriametrics-metrics-datasource", "prometheus"] {
+        assert!(lines[0].contains(fact), "{fact} missing: {stderr}");
+    }
+    server.verify().await;
+    write_transcript(
+        "s6_metrics_wrong_type_datasource.txt",
+        "gcli metrics instant up --datasource VM",
+        &out,
+    );
+}
+
 // expected RFC3339 rendering used across wire commands (logs consistency)
 #[test]
 fn epoch_formatting_contract() {

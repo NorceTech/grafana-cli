@@ -20,18 +20,36 @@ impl Kind {
     }
 }
 
+/// The stderr note for an explicit `--datasource` whose type is not `wanted`.
+/// gcli queries it anyway: Prometheus-compatible plugins (VictoriaMetrics,
+/// Amazon Managed Prometheus) have their own type but answer the same API.
+pub fn type_mismatch(ds: &Datasource, wanted: Kind) -> Option<String> {
+    (ds.r#type != wanted.as_str()).then(|| {
+        format!(
+            "note: datasource '{}' is type {}, expected {}; querying it anyway",
+            ds.name,
+            ds.r#type,
+            wanted.as_str()
+        )
+    })
+}
+
 pub fn resolve<'a>(
     all: &'a [Datasource],
     kind: Kind,
     flag: Option<&str>,
 ) -> Result<&'a Datasource> {
     if let Some(flag) = flag {
-        return all
+        let ds = all
             .iter()
             .find(|d| d.uid == flag || d.name == flag)
             .ok_or_else(|| Error::Config {
                 message: format!("datasource '{flag}' not found"),
-            });
+            })?;
+        if let Some(note) = type_mismatch(ds, kind) {
+            eprintln!("{note}");
+        }
+        return Ok(ds);
     }
     let wanted_type = kind.as_str();
     let label = |d: &Datasource| format!("{}({})", d.name, d.r#type);
@@ -172,6 +190,25 @@ mod tests {
             resolve(&all, Kind::Loki, Some("Prom")).unwrap().uid,
             "u-prom"
         );
+    }
+
+    #[test]
+    fn type_mismatch_notes_a_datasource_of_another_type() {
+        let vm = ds(5, "u-vm", "VM", "victoriametrics-metrics-datasource", false);
+
+        let note = type_mismatch(&vm, Kind::Prometheus).expect("a note");
+
+        assert!(note.starts_with("note: "), "{note}");
+        for fact in ["'VM'", "victoriametrics-metrics-datasource", "prometheus"] {
+            assert!(note.contains(fact), "{fact} missing: {note}");
+        }
+    }
+
+    #[test]
+    fn type_mismatch_is_none_for_the_wanted_type() {
+        let prom = ds(3, "u-prom", "Prom", "prometheus", false);
+
+        assert_eq!(type_mismatch(&prom, Kind::Prometheus), None);
     }
 
     #[test]
