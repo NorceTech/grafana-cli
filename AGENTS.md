@@ -105,7 +105,7 @@ nix fmt                      # treefmt: rustfmt + nixfmt + prettier (also the pr
 ## NOTES
 
 - Profile selection: `--profile a,b` (order kept) or `--all-profiles` (sorted; clap makes them conflict), else `GRAFANA_CLI_PROFILE` (one name, no CSV), else `current_profile`.
-- `GRAFANA_CLI_{URL,TOKEN,USERNAME,PASSWORD}` are applied only in `Config::active_profile`, i.e. when neither `--profile` nor `--all-profiles` is given (confirmed against the binary); the README claims they apply to any selected profile. The `--url/--token/--username/--password` flags apply to every profile via `Overrides`.
+- `GRAFANA_CLI_{URL,TOKEN,USERNAME,PASSWORD}` override every selected profile (`Config::active_profile` for the single case, `fanout::resolve_profiles` for `--profile`/`--all-profiles`); the `--url/--token/--username/--password` flags then win via `Overrides` in `app.rs`.
 - clap's `env` feature is enabled but unused: env vars are read by hand in `src/config.rs` and `src/auth.rs` and do not appear in `--help`.
 - `auth::from_profile` order is oauth > token/token_command > basic, so `--token` cannot turn an OAuth profile into token auth.
 - `*_command` secrets run as `sh -c "<args joined by spaces>"` at request time; a non-zero exit or empty output is an auth error.

@@ -435,10 +435,11 @@ mod tests {
         unsafe { std::env::remove_var("GCLI_CONFIG_DIR") };
     }
 
-    // Single test fn: precedence + overrides mutate process env, so they must not
-    // run in parallel with other env-touching tests.
+    // Single test fn: precedence + overrides mutate process env; hold the lock so
+    // no other env-touching test runs in parallel.
     #[test]
     fn active_profile_precedence_and_env_overrides() {
+        let _guard = crate::TEST_ENV_LOCK.lock().unwrap();
         let c = sample_config();
 
         // explicit wins over everything, including unknown names erroring

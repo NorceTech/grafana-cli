@@ -1,4 +1,4 @@
-use crate::config::{Config, Profile};
+use crate::config::{Config, Profile, apply_env_overrides};
 use crate::{Error, Result};
 
 pub fn resolve_profiles(
@@ -34,7 +34,9 @@ pub fn resolve_profiles(
             let profile = config.profiles.get(name).ok_or_else(|| Error::Config {
                 message: format!("profile '{name}' not found; available: {}", available()),
             })?;
-            out.push((name.to_string(), profile.clone()));
+            // GRAFANA_CLI_{URL,TOKEN,USERNAME,PASSWORD} override every selected
+            // profile, like Config::active_profile does for the single case.
+            out.push((name.to_string(), apply_env_overrides(profile.clone())));
         }
         return Ok(out);
     }
@@ -47,7 +49,7 @@ pub fn resolve_profiles(
         return Ok(config
             .profiles
             .iter()
-            .map(|(name, profile)| (name.clone(), profile.clone()))
+            .map(|(name, profile)| (name.clone(), apply_env_overrides(profile.clone())))
             .collect());
     }
     let (name, profile) = config.active_profile(None)?;
@@ -185,6 +187,30 @@ mod tests {
         let got = resolve_profiles(None, false, &sample()).unwrap();
         assert_eq!(got[0].0, "c");
         unsafe { std::env::remove_var("GRAFANA_CLI_PROFILE") };
+    }
+
+    #[test]
+    fn csv_and_all_flags_apply_env_overrides() {
+        let _guard = crate::TEST_ENV_LOCK.lock().unwrap();
+        let unset = resolve_profiles(Some("c,a"), false, &sample()).unwrap();
+        unsafe {
+            std::env::set_var("GRAFANA_CLI_URL", "https://env");
+            std::env::set_var("GRAFANA_CLI_TOKEN", "envtok");
+        }
+        let csv = resolve_profiles(Some("c,a"), false, &sample()).unwrap();
+        let all = resolve_profiles(None, true, &sample()).unwrap();
+        unsafe {
+            std::env::remove_var("GRAFANA_CLI_URL");
+            std::env::remove_var("GRAFANA_CLI_TOKEN");
+        }
+        // without the env vars every profile keeps its own settings
+        assert_eq!(unset[0].1.url, "https://c");
+        assert_eq!(unset[1].1.token.as_deref(), Some("t"));
+        assert_eq!(all.len(), 3);
+        for (name, p) in csv.iter().chain(&all) {
+            assert_eq!(p.url, "https://env", "{name}");
+            assert_eq!(p.token.as_deref(), Some("envtok"), "{name}");
+        }
     }
 
     #[tokio::test]

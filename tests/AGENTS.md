@@ -6,17 +6,17 @@ Black-box integration suite: every test spawns the compiled `gcli` binary agains
 
 ## WHERE TO LOOK
 
-| Scenario                                                  | File                    | IDs    |
-| --------------------------------------------------------- | ----------------------- | ------ |
-| profile add/list/use/set-token/remove, profile errors     | `config_cli.rs`         | s1     |
-| health; datasources (`--type`, table)                     | `health_datasources.rs` | s2, s3 |
-| logs search, labels, label-values                         | `logs.rs`               | s4, s5 |
-| metrics instant/range, epoch wire format                  | `metrics.rs`            | s6     |
-| traces get/search/404                                     | `traces.rs`             | s7     |
-| multi-profile fanout, exit codes, concurrency             | `fanout_e2e.rs`         | s8a-e  |
-| basic auth header; OAuth fetch/reuse/expiry/401 retry     | `auth.rs`               | s9-s10 |
-| output modes, error JSON schema, help/version/completions | `ux.rs`                 | s11-12 |
-| broken pipe exits 0 (real `bash -c` pipe to `head -c 1`)  | `pipe.rs`               | -      |
+| Scenario                                                                          | File                    | IDs          |
+| --------------------------------------------------------------------------------- | ----------------------- | ------------ |
+| profile add/list/use/set-token/remove, profile errors                             | `config_cli.rs`         | s1           |
+| health; datasources (`--type`, table)                                             | `health_datasources.rs` | s2, s3       |
+| logs search, labels, label-values                                                 | `logs.rs`               | s4, s5       |
+| metrics instant/range, epoch wire format                                          | `metrics.rs`            | s6           |
+| traces get/search/404                                                             | `traces.rs`             | s7           |
+| multi-profile fanout, exit codes, concurrency                                     | `fanout_e2e.rs`         | s8a-e        |
+| basic auth header; OAuth fetch/reuse/expiry/401 retry; env vs flag token override | `auth.rs`               | s9, s10, s13 |
+| output modes, error JSON schema, help/version/completions                         | `ux.rs`                 | s11-12       |
+| broken pipe exits 0 (real `bash -c` pipe to `head -c 1`)                          | `pipe.rs`               | -            |
 
 Shared harness, `common/mod.rs`:
 

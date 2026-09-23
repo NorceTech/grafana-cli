@@ -203,3 +203,46 @@ async fn s10_oauth_401_retry() {
         &out,
     );
 }
+
+// GRAFANA_CLI_* override whichever profile was selected, --profile included,
+// and a CLI flag still beats the env var (README: flags > env > config).
+#[tokio::test]
+async fn s13_env_token_overrides_selected_profile_and_flag_beats_env() {
+    let server = wiremock::MockServer::start().await;
+    health_auth_mock("Bearer envtok")
+        .expect(1)
+        .mount(&server)
+        .await;
+    health_auth_mock("Bearer flagtok")
+        .expect(1)
+        .mount(&server)
+        .await;
+    let config = fixture_config(&format!(
+        "[profiles.p]\nurl = \"{}\"\ntoken = \"filetok\"\n",
+        server.uri()
+    ));
+    let cache = tempfile::tempdir().unwrap();
+    let [config_env, cache_env] = envs(&config, &cache);
+    let env = [config_env, cache_env, ("GRAFANA_CLI_TOKEN", "envtok")];
+
+    let via_env = spawn_gcli(&["--profile", "p", "health"], &env);
+    let via_flag = spawn_gcli(&["--profile", "p", "--token", "flagtok", "health"], &env);
+
+    for out in [&via_env, &via_flag] {
+        assert!(
+            out.status.success(),
+            "exit={:?} stderr={}",
+            out.status.code(),
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+    server.verify().await;
+    write_transcript_multi(
+        "s13_env_overrides.txt",
+        &(transcript_block("GRAFANA_CLI_TOKEN=envtok gcli --profile p health", &via_env)
+            + &transcript_block(
+                "GRAFANA_CLI_TOKEN=envtok gcli --profile p --token flagtok health",
+                &via_flag,
+            )),
+    );
+}
