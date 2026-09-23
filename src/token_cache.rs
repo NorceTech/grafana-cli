@@ -1,3 +1,4 @@
+use crate::secret_file::write_secret;
 use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -51,38 +52,31 @@ fn read(path: &Path) -> BTreeMap<String, CacheEntry> {
 }
 
 fn write(path: &Path, cache: &BTreeMap<String, CacheEntry>) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let raw = serde_json::to_string(cache).map_err(|e| Error::Auth {
+    let raw = serde_json::to_vec(cache).map_err(|e| Error::Auth {
         kind: "oauth".into(),
         message: format!("cache serialize: {e}"),
     })?;
-    std::fs::write(path, raw)?;
-    restrict_permissions(path);
-    Ok(())
+    write_secret(path, &raw)
 }
-
-// Best-effort chmod 0600 on the token cache; a chmod failure is non-fatal.
-#[cfg(unix)]
-fn restrict_permissions(path: &Path) {
-    use std::os::unix::fs::PermissionsExt;
-    let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
-}
-
-#[cfg(not(unix))]
-fn restrict_permissions(_path: &Path) {}
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    // Storing replaces tokens.json instead of rewriting it in place: a reader
+    // that opened the old file keeps its complete bytes, the new file is
+    // owner-only from the start, and no temp file is left behind.
     #[cfg(unix)]
     #[test]
-    fn cache_file_is_owner_only() {
+    fn store_replaces_a_0644_cache_atomically_with_an_owner_only_file() {
+        use std::io::Read;
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("tokens.json");
+        std::fs::write(&path, "{}").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let mut reader = std::fs::File::open(&path).unwrap();
+
         store(
             &path,
             "p:cid",
@@ -92,7 +86,16 @@ mod tests {
             },
         )
         .unwrap();
+
+        let mut old = String::new();
+        reader.read_to_string(&mut old).unwrap();
+        assert_eq!(old, "{}", "rewritten in place");
         let mode = std::fs::metadata(&path).unwrap().permissions().mode();
-        assert_eq!(mode & 0o777, 0o600, "tokens.json must be chmod 0600");
+        assert_eq!(mode & 0o777, 0o600, "tokens.json must be 0600");
+        let names: Vec<String> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
+        assert_eq!(names, ["tokens.json"], "temp file left behind");
     }
 }

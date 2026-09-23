@@ -24,6 +24,7 @@ grafana-cli/
 │   ├── environment.rs # Environment (the only env reader), ProfileOverrides
 │   ├── auth.rs        # AuthProvider, *_command via sh -c, OAuth token fetch
 │   ├── token_cache.rs # OAuth tokens.json: path, lookup, store, remove
+│   ├── secret_file.rs # write_secret: atomic owner-only writes of secret files
 │   ├── fanout.rs      # --profile a,b / --all-profiles, overrides, JoinSet, exit aggregation
 │   ├── datasource.rs  # Kind enum; pick: flag > sole of type > unique default
 │   ├── error.rs       # Error -> JSON error kind + exit code
@@ -75,7 +76,7 @@ Refs = ast-grep AST-node references across `src/` and `tests/`, definition exclu
 - Fallible lib code returns `crate::Result<T>` with the thiserror `Error`; the variant decides the JSON `kind` and the exit code. `anyhow` is in Cargo.toml but unused; don't introduce it.
 - Bad user input is `Error::Config` (exit 2); transport, HTTP and upstream-parse failures are `Http` / `Io` / `Url` (exit 1).
 - Deterministic output: `BTreeMap` for profiles and labels, explicit sorts before rendering.
-- `config.toml` and `tokens.json` get a best-effort chmod 0600 after every write.
+- `config.toml` and `tokens.json` are written only through `secret_file::write_secret`: a fresh 0600 sibling temp file, fsynced, then renamed over the target, so the file is never partial and never wider than 0600.
 - Unit tests sit in `#[cfg(test)]` modules and never touch process env: `Environment::from_process`, called once in `app::run`, is the only env read, and lib functions take the profile name, overrides and directories as arguments, so tests pass explicit values and tempdir paths.
 
 ## ANTI-PATTERNS (THIS PROJECT)

@@ -1,3 +1,4 @@
+use crate::secret_file::write_secret;
 use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -68,15 +69,10 @@ impl Config {
     }
 
     pub fn save_to(&self, path: &Path) -> Result<()> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
         let raw = toml::to_string_pretty(self).map_err(|e| Error::Config {
             message: e.to_string(),
         })?;
-        std::fs::write(path, raw)?;
-        restrict_permissions(path);
-        Ok(())
+        write_secret(path, raw.as_bytes())
     }
 
     /// The profile used when neither `--profile` nor `--all-profiles` is given:
@@ -160,17 +156,6 @@ impl Config {
         }
     }
 }
-
-// Best-effort chmod 0600 on a freshly written secret-bearing file. A chmod
-// failure is non-fatal: the file already exists with the default umask mode.
-#[cfg(unix)]
-fn restrict_permissions(path: &std::path::Path) {
-    use std::os::unix::fs::PermissionsExt;
-    let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
-}
-
-#[cfg(not(unix))]
-fn restrict_permissions(_path: &std::path::Path) {}
 
 fn validate_auth(profile: &Profile) -> Result<()> {
     let token_mode = profile.token.is_some() || profile.token_command.is_some();
@@ -327,15 +312,33 @@ mod tests {
         assert!(c.add_profile("ok_cmd", ok_cmd).is_ok());
     }
 
+    // Saving replaces the file instead of rewriting it in place: a reader that
+    // opened the old file keeps its complete bytes, the new file is owner-only
+    // from the start, and no temp file is left behind.
     #[cfg(unix)]
     #[test]
-    fn save_sets_owner_only_permissions() {
+    fn save_to_replaces_a_0644_config_atomically_with_an_owner_only_file() {
+        use std::io::Read;
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config.toml");
+        std::fs::write(&path, "current_profile = \"old\"\n").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let mut reader = std::fs::File::open(&path).unwrap();
+
         sample_config().save_to(&path).unwrap();
+
+        let mut old = String::new();
+        reader.read_to_string(&mut old).unwrap();
+        assert_eq!(old, "current_profile = \"old\"\n", "rewritten in place");
         let mode = std::fs::metadata(&path).unwrap().permissions().mode();
-        assert_eq!(mode & 0o777, 0o600, "config.toml must be chmod 0600");
+        assert_eq!(mode & 0o777, 0o600, "config.toml must be 0600");
+        let names: Vec<String> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
+        assert_eq!(names, ["config.toml"], "temp file left behind");
+        assert_eq!(Config::load_from(&path).unwrap(), sample_config());
     }
 
     #[test]

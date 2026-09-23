@@ -7,6 +7,7 @@ pub mod environment;
 pub mod error;
 pub mod fanout;
 pub mod output;
+mod secret_file;
 pub mod timeutil;
 pub mod token_cache;
 
