@@ -22,7 +22,8 @@ grafana-cli/
 │   ├── client.rs      # GrafanaClient: auth headers, OAuth 401 retry, proxy GET
 │   ├── config.rs      # config.toml model, path, load/save, profile resolution
 │   ├── environment.rs # Environment (the only env reader), ProfileOverrides
-│   ├── auth.rs        # AuthProvider, *_command via sh -c, OAuth tokens.json
+│   ├── auth.rs        # AuthProvider, *_command via sh -c, OAuth token fetch
+│   ├── token_cache.rs # OAuth tokens.json: path, lookup, store, remove
 │   ├── fanout.rs      # --profile a,b / --all-profiles, overrides, JoinSet, exit aggregation
 │   ├── datasource.rs  # Kind enum; pick: flag > sole of type > unique default
 │   ├── error.rs       # Error -> JSON error kind + exit code
@@ -42,7 +43,7 @@ grafana-cli/
 | Rendering, multi-profile wrapping      | `src/render.rs`                             | the only stdout writer                                                                                  |
 | New error kind or exit code            | `src/error.rs`                              | `emit_json_error` + `exit_code` + their tests + README table                                            |
 | Profile selection, env vars            | `src/{environment,fanout,config}.rs`        | see NOTES                                                                                               |
-| Auth modes, OAuth token cache          | `src/auth.rs`, `src/client.rs`              |                                                                                                         |
+| Auth modes, OAuth token cache          | `src/{auth,token_cache,client}.rs`          |                                                                                                         |
 | Time windows                           | `src/timeutil.rs`                           |                                                                                                         |
 | Integration tests                      | `tests/`                                    | own AGENTS.md                                                                                           |
 | User-facing contract                   | `README.md`                                 | sections Output modes, Errors and exit codes, For AI agents                                             |

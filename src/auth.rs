@@ -1,6 +1,5 @@
+use crate::token_cache::{self, CacheEntry};
 use crate::{Error, OAuthConfig, Profile, Result};
-use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
@@ -29,7 +28,7 @@ pub fn from_profile(
         return Ok(AuthProvider::OAuth(OAuthSource {
             profile_name: profile_name.to_string(),
             config: config.clone(),
-            cache_path: token_cache_path(cache_dir)?,
+            cache_path: token_cache::path(cache_dir)?,
         }));
     }
     if profile.token.is_some() || profile.token_command.is_some() {
@@ -65,10 +64,8 @@ pub async fn get_oauth_token(source: &OAuthSource, http: &reqwest::Client) -> Re
     let key = format!("{}:{}", source.profile_name, config.client_id);
     let path = &source.cache_path;
     let now = chrono::Utc::now().timestamp();
-    if let Some(entry) = read_cache(path).get(&key)
-        && entry.expires_at_unix > now
-    {
-        return Ok(entry.token.clone());
+    if let Some(token) = token_cache::fresh_token(path, &key, now) {
+        return Ok(token);
     }
 
     let auth_error = |message: String| Error::Auth {
@@ -127,22 +124,13 @@ pub async fn get_oauth_token(source: &OAuthSource, http: &reqwest::Client) -> Re
         expires_at_unix: now + expires_in - 60,
         token: token.clone(),
     };
-    write_cache_entry(path, &key, &entry)?;
+    token_cache::store(path, &key, entry)?;
     Ok(token)
 }
 
 pub fn invalidate(source: &OAuthSource) {
-    let path = &source.cache_path;
-    let mut cache = read_cache(path);
-    if cache
-        .remove(&format!(
-            "{}:{}",
-            source.profile_name, source.config.client_id
-        ))
-        .is_some()
-    {
-        let _ = write_whole_cache(path, &cache);
-    }
+    let key = format!("{}:{}", source.profile_name, source.config.client_id);
+    token_cache::remove(&source.cache_path, &key);
 }
 
 pub(crate) fn exec_command(cmd: &[String], kind: &str) -> Result<String> {
@@ -168,61 +156,6 @@ pub(crate) fn exec_command(cmd: &[String], kind: &str) -> Result<String> {
     }
     Ok(stdout)
 }
-
-/// Where the OAuth token cache lives: `tokens.json` in `cache_dir`
-/// (`GCLI_CACHE_DIR`) when given, else in the platform cache directory.
-pub fn token_cache_path(cache_dir: Option<&Path>) -> Result<PathBuf> {
-    if let Some(dir) = cache_dir {
-        return Ok(dir.join("tokens.json"));
-    }
-    let dirs =
-        directories::ProjectDirs::from("", "", "grafana-cli").ok_or_else(|| Error::Config {
-            message: "cannot determine cache directory".into(),
-        })?;
-    Ok(dirs.cache_dir().join("tokens.json"))
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct CacheEntry {
-    token: String,
-    expires_at_unix: i64,
-}
-
-fn read_cache(path: &std::path::Path) -> BTreeMap<String, CacheEntry> {
-    std::fs::read_to_string(path)
-        .ok()
-        .and_then(|raw| serde_json::from_str(&raw).ok())
-        .unwrap_or_default()
-}
-
-fn write_cache_entry(path: &std::path::Path, key: &str, entry: &CacheEntry) -> Result<()> {
-    let mut cache = read_cache(path);
-    cache.insert(key.to_string(), entry.clone());
-    write_whole_cache(path, &cache)
-}
-
-fn write_whole_cache(path: &std::path::Path, cache: &BTreeMap<String, CacheEntry>) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let raw = serde_json::to_string(cache).map_err(|e| Error::Auth {
-        kind: "oauth".into(),
-        message: format!("cache serialize: {e}"),
-    })?;
-    std::fs::write(path, raw)?;
-    restrict_permissions(path);
-    Ok(())
-}
-
-// Best-effort chmod 0600 on the token cache; a chmod failure is non-fatal.
-#[cfg(unix)]
-fn restrict_permissions(path: &std::path::Path) {
-    use std::os::unix::fs::PermissionsExt;
-    let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
-}
-
-#[cfg(not(unix))]
-fn restrict_permissions(_path: &std::path::Path) {}
 
 #[cfg(test)]
 mod tests {
@@ -519,25 +452,6 @@ mod tests {
         let cache = read_cache_file(dir.path());
         assert!(cache.get("p:cid").is_none());
         assert!(cache.get("other:cid").is_some());
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn cache_file_is_owner_only() {
-        use std::os::unix::fs::PermissionsExt;
-        let dir = cache_dir();
-        let path = dir.path().join("tokens.json");
-        write_cache_entry(
-            &path,
-            "p:cid",
-            &CacheEntry {
-                token: "t".into(),
-                expires_at_unix: 9,
-            },
-        )
-        .unwrap();
-        let mode = std::fs::metadata(&path).unwrap().permissions().mode();
-        assert_eq!(mode & 0o777, 0o600, "tokens.json must be chmod 0600");
     }
 
     #[test]
