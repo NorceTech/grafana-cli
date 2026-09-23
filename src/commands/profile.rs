@@ -4,6 +4,7 @@ use crate::config::{Config, OAuthConfig, Profile};
 use crate::error::Error;
 use crate::output::OutputMode;
 use serde_json::{Value, json};
+use std::path::Path;
 
 #[derive(clap::Subcommand, Debug)]
 #[allow(clippy::large_enum_variant)]
@@ -55,7 +56,7 @@ pub struct AddArgs {
     pub audience: Option<String>,
 }
 
-pub fn add(config: &mut Config, args: &AddArgs) -> Result<CommandOutput> {
+pub fn add(config: &mut Config, config_path: &Path, args: &AddArgs) -> Result<CommandOutput> {
     let profile = Profile {
         url: args.url.clone(),
         token: args.token.clone(),
@@ -67,7 +68,7 @@ pub fn add(config: &mut Config, args: &AddArgs) -> Result<CommandOutput> {
     };
     let auth = auth_mode(&profile);
     config.add_profile(&args.name, profile)?;
-    config.save()?;
+    config.save_to(config_path)?;
     Ok(CommandOutput::Json(json!({
         "action": "add",
         "profile": args.name,
@@ -113,25 +114,30 @@ pub fn list(config: &Config, mode: OutputMode) -> Result<CommandOutput> {
     }
 }
 
-pub fn use_profile(config: &mut Config, name: &str) -> Result<CommandOutput> {
+pub fn use_profile(config: &mut Config, config_path: &Path, name: &str) -> Result<CommandOutput> {
     config.use_profile(name)?;
-    config.save()?;
+    config.save_to(config_path)?;
     Ok(CommandOutput::Json(
         json!({"action": "use", "profile": name}),
     ))
 }
 
-pub fn remove(config: &mut Config, name: &str) -> Result<CommandOutput> {
+pub fn remove(config: &mut Config, config_path: &Path, name: &str) -> Result<CommandOutput> {
     config.remove_profile(name)?;
-    config.save()?;
+    config.save_to(config_path)?;
     Ok(CommandOutput::Json(
         json!({"action": "remove", "profile": name}),
     ))
 }
 
-pub fn set_token(config: &mut Config, name: &str, token: &str) -> Result<CommandOutput> {
+pub fn set_token(
+    config: &mut Config,
+    config_path: &Path,
+    name: &str,
+    token: &str,
+) -> Result<CommandOutput> {
     config.set_token(name, Some(token))?;
-    config.save()?;
+    config.save_to(config_path)?;
     Ok(CommandOutput::Json(
         json!({"action": "set-token", "profile": name}),
     ))
@@ -247,15 +253,13 @@ mod tests {
 
     #[test]
     fn add_and_lifecycle_ops_mutate_config() {
-        // add/save resolve config_path() from GCLI_CONFIG_DIR; pin it to a
-        // tempdir so the test never touches the real config file.
-        let _guard = crate::TEST_ENV_LOCK.lock().unwrap();
         let dir = tempfile::tempdir().unwrap();
-        unsafe { std::env::set_var("GCLI_CONFIG_DIR", dir.path()) };
+        let path = dir.path().join("config.toml");
 
         let mut config = Config::default();
         let out = add(
             &mut config,
+            &path,
             &AddArgs {
                 token: Some("t".into()),
                 ..add_args(None, None)
@@ -268,13 +272,11 @@ mod tests {
         }
         assert!(config.profiles.contains_key("n"));
 
-        use_profile(&mut config, "n").unwrap();
+        use_profile(&mut config, &path, "n").unwrap();
         assert_eq!(config.current_profile.as_deref(), Some("n"));
-        set_token(&mut config, "n", "t2").unwrap();
+        set_token(&mut config, &path, "n", "t2").unwrap();
         assert_eq!(config.profiles["n"].token.as_deref(), Some("t2"));
-        remove(&mut config, "n").unwrap();
+        remove(&mut config, &path, "n").unwrap();
         assert!(config.profiles.is_empty());
-
-        unsafe { std::env::remove_var("GCLI_CONFIG_DIR") };
     }
 }

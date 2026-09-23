@@ -246,3 +246,52 @@ async fn s13_env_token_overrides_selected_profile_and_flag_beats_env() {
             )),
     );
 }
+
+// GRAFANA_CLI_PROFILE beats current_profile, and GRAFANA_CLI_URL, _USERNAME and
+// _PASSWORD replace the selected profile's url and basic credentials. Both file
+// urls are dead, so only the env url can reach the mock, and only as u:p.
+#[tokio::test]
+async fn s14_env_selects_profile_and_overrides_url_and_basic_credentials() {
+    let server = wiremock::MockServer::start().await;
+    health_auth_mock("Basic dTpw")
+        .expect(1)
+        .mount(&server)
+        .await;
+    let config = fixture_config(
+        "current_profile = \"other\"\n\
+         [profiles.other]\n\
+         url = \"http://127.0.0.1:1\"\n\
+         token = \"othertok\"\n\
+         [profiles.p]\n\
+         url = \"http://127.0.0.1:1\"\n\
+         username = \"fileuser\"\n\
+         password = \"filepass\"\n",
+    );
+    let cache = tempfile::tempdir().unwrap();
+    let [config_env, cache_env] = envs(&config, &cache);
+    let uri = server.uri();
+    let env = [
+        config_env,
+        cache_env,
+        ("GRAFANA_CLI_PROFILE", "p"),
+        ("GRAFANA_CLI_URL", uri.as_str()),
+        ("GRAFANA_CLI_USERNAME", "u"),
+        ("GRAFANA_CLI_PASSWORD", "p"),
+    ];
+
+    let out = spawn_gcli(&["health"], &env);
+
+    assert!(
+        out.status.success(),
+        "exit={:?} stderr={}",
+        out.status.code(),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    server.verify().await;
+    write_transcript(
+        "s14_env_profile_and_overrides.txt",
+        "GRAFANA_CLI_PROFILE=p GRAFANA_CLI_URL=<mock> GRAFANA_CLI_USERNAME=u \
+         GRAFANA_CLI_PASSWORD=p gcli health",
+        &out,
+    );
+}

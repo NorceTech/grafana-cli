@@ -204,6 +204,8 @@ mod tests {
 
     #[test]
     fn profile_commands_are_implemented() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
         let mut config = Config::default();
         let args = profile::AddArgs {
             name: "n".into(),
@@ -221,14 +223,17 @@ mod tests {
             audience: None,
         };
         for (name, r) in [
-            ("add", profile::add(&mut config, &args)),
+            ("add", profile::add(&mut config, &path, &args)),
             (
                 "list",
                 profile::list(&config, crate::output::OutputMode::Json),
             ),
-            ("use", profile::use_profile(&mut config, "n")),
-            ("remove", profile::remove(&mut config, "n")),
-            ("set_token", profile::set_token(&mut config, "n", "t")),
+            ("use", profile::use_profile(&mut config, &path, "n")),
+            ("remove", profile::remove(&mut config, &path, "n")),
+            (
+                "set_token",
+                profile::set_token(&mut config, &path, "n", "t"),
+            ),
         ] {
             assert!(
                 !matches!(r, Err(Error::Unimplemented)),

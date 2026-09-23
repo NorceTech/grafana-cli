@@ -3,7 +3,8 @@ use clap_complete::generate;
 use gcli_lib::client::GrafanaClient;
 use gcli_lib::commands::profile::ProfileCmd;
 use gcli_lib::commands::{self, Query};
-use gcli_lib::config::Profile;
+use gcli_lib::config::{Config, config_path};
+use gcli_lib::environment::{Environment, ProfileOverrides};
 use gcli_lib::output::{OutputMode, resolve_output};
 use std::io::IsTerminal;
 use std::sync::Arc;
@@ -14,6 +15,8 @@ use crate::render::{fail, print_output, print_results, write_stdout};
 pub(crate) async fn run(cli: Cli) -> i32 {
     // Lazy: completions output ignores --output.
     let mode = || resolve_output(cli.output, std::io::stdout().is_terminal());
+    // The only read of the process environment: everything below gets values.
+    let env = Environment::from_process();
     match &cli.command {
         Commands::Completions { shell } => {
             let shell = match shell {
@@ -27,32 +30,42 @@ pub(crate) async fn run(cli: Cli) -> i32 {
             write_stdout(&buf);
             0
         }
-        Commands::Profile { cmd } => profile_command(cmd, mode()),
-        Commands::Query(query) => dispatch(&cli, mode(), query).await,
+        Commands::Profile { cmd } => profile_command(cmd, mode(), &env),
+        Commands::Query(query) => dispatch(&cli, mode(), query, env).await,
     }
 }
 
-async fn dispatch(cli: &Cli, mode: OutputMode, query: &Query) -> i32 {
-    let config = match gcli_lib::Config::load() {
-        Ok(c) => c,
+async fn dispatch(cli: &Cli, mode: OutputMode, query: &Query, env: Environment) -> i32 {
+    let selected = config_path(env.config_dir.as_deref())
+        .and_then(|path| Config::load_from(&path))
+        .and_then(|config| {
+            gcli_lib::fanout::resolve_profiles(
+                cli.profile.as_deref(),
+                cli.all_profiles,
+                &config,
+                env.profile.as_deref(),
+            )
+        });
+    let profiles = match selected {
+        Ok(p) => p,
         Err(e) => return fail(cli.profile.as_deref(), &e),
     };
-    let profiles =
-        match gcli_lib::fanout::resolve_profiles(cli.profile.as_deref(), cli.all_profiles, &config)
-        {
-            Ok(p) => p,
-            Err(e) => return fail(cli.profile.as_deref(), &e),
-        };
-    let overrides = Overrides::from_cli(cli);
+    let flags = ProfileOverrides {
+        url: cli.url.clone(),
+        token: cli.token.clone(),
+        username: cli.username.clone(),
+        password: cli.password.clone(),
+    };
+    let profiles = gcli_lib::fanout::apply_overrides(profiles, env.overrides, flags);
     let http = reqwest::Client::new();
     let query = Arc::new(query.clone());
+    let cache_dir = env.cache_dir;
     let results = gcli_lib::fanout::run(profiles, move |name, profile| {
         let query = Arc::clone(&query);
-        let overrides = overrides.clone();
         let http = http.clone();
+        let cache_dir = cache_dir.clone();
         async move {
-            let profile = overrides.apply(profile);
-            let auth = gcli_lib::auth::from_profile(&name, &profile)?;
+            let auth = gcli_lib::auth::from_profile(&name, &profile, cache_dir.as_deref())?;
             let client = GrafanaClient::new(profile.url, auth, http);
             query.run(&client, &name, mode).await
         }
@@ -61,53 +74,20 @@ async fn dispatch(cli: &Cli, mode: OutputMode, query: &Query) -> i32 {
     print_results(&results, mode)
 }
 
-#[derive(Clone, Default)]
-struct Overrides {
-    url: Option<String>,
-    token: Option<String>,
-    username: Option<String>,
-    password: Option<String>,
-}
-
-impl Overrides {
-    fn from_cli(cli: &Cli) -> Self {
-        Self {
-            url: cli.url.clone(),
-            token: cli.token.clone(),
-            username: cli.username.clone(),
-            password: cli.password.clone(),
-        }
-    }
-
-    fn apply(&self, mut profile: Profile) -> Profile {
-        if let Some(url) = &self.url {
-            profile.url = url.clone();
-        }
-        if self.token.is_some() {
-            profile.token = self.token.clone();
-        }
-        if let Some(username) = &self.username {
-            profile.username = Some(username.clone());
-        }
-        if let Some(password) = &self.password {
-            profile.password = Some(password.clone());
-        }
-        profile
-    }
-}
-
-fn profile_command(cmd: &ProfileCmd, mode: OutputMode) -> i32 {
-    let mut config = match gcli_lib::Config::load() {
-        Ok(c) => c,
+fn profile_command(cmd: &ProfileCmd, mode: OutputMode, env: &Environment) -> i32 {
+    let loaded = config_path(env.config_dir.as_deref())
+        .and_then(|path| Config::load_from(&path).map(|config| (config, path)));
+    let (mut config, path) = match loaded {
+        Ok(loaded) => loaded,
         Err(e) => return fail(None, &e),
     };
     let result = match cmd {
-        ProfileCmd::Add { args } => commands::profile::add(&mut config, args),
+        ProfileCmd::Add { args } => commands::profile::add(&mut config, &path, args),
         ProfileCmd::List => commands::profile::list(&config, mode),
-        ProfileCmd::Use { name } => commands::profile::use_profile(&mut config, name),
-        ProfileCmd::Remove { name } => commands::profile::remove(&mut config, name),
+        ProfileCmd::Use { name } => commands::profile::use_profile(&mut config, &path, name),
+        ProfileCmd::Remove { name } => commands::profile::remove(&mut config, &path, name),
         ProfileCmd::SetToken { name, token } => {
-            commands::profile::set_token(&mut config, name, token)
+            commands::profile::set_token(&mut config, &path, name, token)
         }
     };
     match result {

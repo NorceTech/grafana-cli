@@ -17,12 +17,13 @@ grafana-cli/
 │   ├── app.rs         # [bin] Commands match; dispatch() runs a Query per profile
 │   ├── cli.rs         # [bin] clap root: global flags, Commands (flattens Query)
 │   ├── render.rs      # [bin] every stdout/stderr write, BrokenPipe, exit code
-│   ├── lib.rs         # lib `gcli_lib`: modules, flat re-exports, TEST_ENV_LOCK
+│   ├── lib.rs         # lib `gcli_lib`: modules, flat re-exports
 │   ├── commands/      # one module per command family: clap types + run (own AGENTS.md)
 │   ├── client.rs      # GrafanaClient: auth headers, OAuth 401 retry, proxy GET
-│   ├── config.rs      # config.toml model, profile resolution, env overrides
+│   ├── config.rs      # config.toml model, path, load/save, profile resolution
+│   ├── environment.rs # Environment (the only env reader), ProfileOverrides
 │   ├── auth.rs        # AuthProvider, *_command via sh -c, OAuth tokens.json
-│   ├── fanout.rs      # --profile a,b / --all-profiles, JoinSet, exit aggregation
+│   ├── fanout.rs      # --profile a,b / --all-profiles, overrides, JoinSet, exit aggregation
 │   ├── datasource.rs  # Kind enum; pick: flag > sole of type > unique default
 │   ├── error.rs       # Error -> JSON error kind + exit code
 │   ├── output.rs      # OutputMode (TTY auto), LogRecord, JSONL, comfy-table
@@ -34,17 +35,17 @@ grafana-cli/
 
 ## WHERE TO LOOK
 
-| Task                                   | Location                                       | Notes                                                                                                   |
-| -------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| Add or change a command                | `src/commands/`                                | checklist in `src/commands/AGENTS.md`; `src/cli.rs` + `src/app.rs` only for commands that don't fan out |
-| Global flag or per-invocation override | `Cli` in `src/cli.rs`, `Overrides` in `app.rs` | flags are `global = true`                                                                               |
-| Rendering, multi-profile wrapping      | `src/render.rs`                                | the only stdout writer                                                                                  |
-| New error kind or exit code            | `src/error.rs`                                 | `emit_json_error` + `exit_code` + their tests + README table                                            |
-| Profile selection, env vars            | `src/fanout.rs`, `src/config.rs`               | see NOTES                                                                                               |
-| Auth modes, OAuth token cache          | `src/auth.rs`, `src/client.rs`                 |                                                                                                         |
-| Time windows                           | `src/timeutil.rs`                              |                                                                                                         |
-| Integration tests                      | `tests/`                                       | own AGENTS.md                                                                                           |
-| User-facing contract                   | `README.md`                                    | sections Output modes, Errors and exit codes, For AI agents                                             |
+| Task                                   | Location                                    | Notes                                                                                                   |
+| -------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Add or change a command                | `src/commands/`                             | checklist in `src/commands/AGENTS.md`; `src/cli.rs` + `src/app.rs` only for commands that don't fan out |
+| Global flag or per-invocation override | `Cli` in `src/cli.rs`, `src/environment.rs` | flags are `global = true`; overrides are `ProfileOverrides`                                             |
+| Rendering, multi-profile wrapping      | `src/render.rs`                             | the only stdout writer                                                                                  |
+| New error kind or exit code            | `src/error.rs`                              | `emit_json_error` + `exit_code` + their tests + README table                                            |
+| Profile selection, env vars            | `src/{environment,fanout,config}.rs`        | see NOTES                                                                                               |
+| Auth modes, OAuth token cache          | `src/auth.rs`, `src/client.rs`              |                                                                                                         |
+| Time windows                           | `src/timeutil.rs`                           |                                                                                                         |
+| Integration tests                      | `tests/`                                    | own AGENTS.md                                                                                           |
+| User-facing contract                   | `README.md`                                 | sections Output modes, Errors and exit codes, For AI agents                                             |
 
 ## CODE MAP
 
@@ -61,9 +62,9 @@ Refs = ast-grep AST-node references across `src/` and `tests/`, definition exclu
 | `Datasource`                   | struct | `src/client.rs:7`        | 20   | `/api/datasources` row fed to `datasource::resolve`                                  |
 | `Query`                        | enum   | `src/commands/mod.rs:40` | 18   | clap subcommands that fan out; `Query::run` delegates to each family's `run`         |
 | `QueryWindow`                  | struct | `src/commands/mod.rs:26` | 15   | clap `Args`: window + `--datasource`, flattened into query subcommands               |
-| `resolve_profiles`             | fn     | `src/fanout.rs:4`        | 9    | decides which profiles run                                                           |
+| `resolve_profiles`             | fn     | `src/fanout.rs:8`        | 9    | decides which profiles run                                                           |
 | `emit_json_error`, `exit_code` | fn     | `src/error.rs:33`, `:57` | 9, 9 | the error contract                                                                   |
-| `dispatch`                     | fn     | `src/app.rs:35`          | 1    | config -> profiles -> overrides -> auth -> client -> `Query::run` (fanout) -> render |
+| `dispatch`                     | fn     | `src/app.rs:38`          | 1    | config -> profiles -> overrides -> auth -> client -> `Query::run` (fanout) -> render |
 
 ## CONVENTIONS
 
@@ -74,7 +75,7 @@ Refs = ast-grep AST-node references across `src/` and `tests/`, definition exclu
 - Bad user input is `Error::Config` (exit 2); transport, HTTP and upstream-parse failures are `Http` / `Io` / `Url` (exit 1).
 - Deterministic output: `BTreeMap` for profiles and labels, explicit sorts before rendering.
 - `config.toml` and `tokens.json` get a best-effort chmod 0600 after every write.
-- Unit tests sit in `#[cfg(test)]` modules; any test that mutates process env must hold `crate::TEST_ENV_LOCK`. Edition 2024 makes `set_var` `unsafe`, hence the `unsafe` blocks and `await_holding_lock` allows in tests.
+- Unit tests sit in `#[cfg(test)]` modules and never touch process env: `Environment::from_process`, called once in `app::run`, is the only env read, and lib functions take the profile name, overrides and directories as arguments, so tests pass explicit values and tempdir paths.
 
 ## ANTI-PATTERNS (THIS PROJECT)
 
@@ -107,8 +108,8 @@ nix fmt                      # treefmt: rustfmt + nixfmt + prettier (also the pr
 ## NOTES
 
 - Profile selection: `--profile a,b` (order kept) or `--all-profiles` (sorted; clap makes them conflict), else `GRAFANA_CLI_PROFILE` (one name, no CSV), else `current_profile`.
-- `GRAFANA_CLI_{URL,TOKEN,USERNAME,PASSWORD}` override every selected profile (`Config::active_profile` for the single case, `fanout::resolve_profiles` for `--profile`/`--all-profiles`); the `--url/--token/--username/--password` flags then win via `Overrides` in `app.rs`.
-- clap's `env` feature is enabled but unused: env vars are read by hand in `src/config.rs` and `src/auth.rs` and do not appear in `--help`.
+- `GRAFANA_CLI_{URL,TOKEN,USERNAME,PASSWORD}` override every selected profile and the `--url/--token/--username/--password` flags win over them: `app::dispatch` calls `fanout::apply_overrides` after `resolve_profiles`, which (like `Config::active_profile`) returns profiles as stored.
+- clap's `env` feature is enabled but unused: env vars are read by hand, only in `Environment::from_process` (`src/environment.rs`), and do not appear in `--help`.
 - `auth::from_profile` order is oauth > token/token_command > basic, so `--token` cannot turn an OAuth profile into token auth.
 - `*_command` secrets run as `sh -c "<args joined by spaces>"` at request time; a non-zero exit or empty output is an auth error.
 - No HTTP timeouts and no retries except the single OAuth 401 refetch; fanout spawns one task per profile with no concurrency cap.

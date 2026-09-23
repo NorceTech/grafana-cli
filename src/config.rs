@@ -1,7 +1,7 @@
 use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct OAuthConfig {
@@ -42,9 +42,11 @@ pub struct Config {
     pub profiles: BTreeMap<String, Profile>,
 }
 
-pub fn config_path() -> Result<PathBuf> {
-    if let Ok(dir) = std::env::var("GCLI_CONFIG_DIR") {
-        return Ok(PathBuf::from(dir).join("config.toml"));
+/// Where `config.toml` lives: in `config_dir` (`GCLI_CONFIG_DIR`) when given,
+/// else in the platform config directory.
+pub fn config_path(config_dir: Option<&Path>) -> Result<PathBuf> {
+    if let Some(dir) = config_dir {
+        return Ok(dir.join("config.toml"));
     }
     let dirs =
         directories::ProjectDirs::from("", "", "grafana-cli").ok_or_else(|| Error::Config {
@@ -54,35 +56,45 @@ pub fn config_path() -> Result<PathBuf> {
 }
 
 impl Config {
-    pub fn load() -> Result<Config> {
-        let path = config_path()?;
+    /// Reads `path`; a missing file is an empty config.
+    pub fn load_from(path: &Path) -> Result<Config> {
         if !path.exists() {
             return Ok(Config::default());
         }
-        let raw = std::fs::read_to_string(&path)?;
+        let raw = std::fs::read_to_string(path)?;
         toml::from_str(&raw).map_err(|e| Error::Config {
             message: format!("{}: {e}", path.display()),
         })
     }
 
-    pub fn save(&self) -> Result<()> {
-        let path = config_path()?;
+    pub fn save_to(&self, path: &Path) -> Result<()> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
         let raw = toml::to_string_pretty(self).map_err(|e| Error::Config {
             message: e.to_string(),
         })?;
-        std::fs::write(&path, raw)?;
-        restrict_permissions(&path);
+        std::fs::write(path, raw)?;
+        restrict_permissions(path);
         Ok(())
     }
 
-    pub fn active_profile(&self, explicit: Option<&str>) -> Result<(String, Profile)> {
-        let env = std::env::var("GRAFANA_CLI_PROFILE").ok();
-        let name = self.resolve_profile_name(explicit, env.as_deref())?;
-        let profile = apply_env_overrides(self.profiles[&name].clone());
-        Ok((name, profile))
+    /// The profile used when neither `--profile` nor `--all-profiles` is given:
+    /// `env_profile` (`GRAFANA_CLI_PROFILE`) if set, else `current_profile`.
+    /// Returned as stored; the caller applies overrides.
+    pub fn active_profile(&self, env_profile: Option<&str>) -> Result<(String, Profile)> {
+        let selected = env_profile.or(self.current_profile.as_deref());
+        let found = selected.and_then(|name| self.profiles.get(name).map(|p| (name, p)));
+        let (name, profile) = found.ok_or_else(|| {
+            let reason = match env_profile {
+                Some(name) => format!("profile '{name}' not found"),
+                None => "no profile selected; use `gcli profile use` or --profile".into(),
+            };
+            Error::Config {
+                message: format!("{reason}; available: {}", self.available()),
+            }
+        })?;
+        Ok((name.to_string(), profile.clone()))
     }
 
     pub fn add_profile(&mut self, name: &str, profile: Profile) -> Result<()> {
@@ -139,49 +151,14 @@ impl Config {
         Ok(())
     }
 
-    fn resolve_profile_name(&self, explicit: Option<&str>, env: Option<&str>) -> Result<String> {
-        if let Some(n) = explicit.or(env) {
-            if self.profiles.contains_key(n) {
-                return Ok(n.to_string());
-            }
-            return Err(Error::Config {
-                message: format!("profile '{n}' not found; available: {}", self.available()),
-            });
-        }
-        match &self.current_profile {
-            Some(cur) if self.profiles.contains_key(cur) => Ok(cur.clone()),
-            _ => Err(Error::Config {
-                message: format!(
-                    "no profile selected; use `gcli profile use` or --profile; available: {}",
-                    self.available()
-                ),
-            }),
-        }
-    }
-
-    fn available(&self) -> String {
+    /// Profile names for error messages, or `(none)`.
+    pub(crate) fn available(&self) -> String {
         if self.profiles.is_empty() {
             "(none)".into()
         } else {
             self.profiles.keys().cloned().collect::<Vec<_>>().join(", ")
         }
     }
-}
-
-pub fn apply_env_overrides(mut profile: Profile) -> Profile {
-    if let Ok(v) = std::env::var("GRAFANA_CLI_URL") {
-        profile.url = v;
-    }
-    for (var, slot) in [
-        ("GRAFANA_CLI_TOKEN", &mut profile.token),
-        ("GRAFANA_CLI_USERNAME", &mut profile.username),
-        ("GRAFANA_CLI_PASSWORD", &mut profile.password),
-    ] {
-        if let Ok(v) = std::env::var(var) {
-            *slot = Some(v);
-        }
-    }
-    profile
 }
 
 // Best-effort chmod 0600 on a freshly written secret-bearing file. A chmod
@@ -218,7 +195,6 @@ fn validate_auth(profile: &Profile) -> Result<()> {
 mod tests {
     use super::*;
 
-    // GCLI_CONFIG_DIR is process-global; serialize tests that touch it.
     fn token_profile() -> Profile {
         Profile {
             url: "https://g.example.com".into(),
@@ -355,16 +331,11 @@ mod tests {
     #[test]
     fn save_sets_owner_only_permissions() {
         use std::os::unix::fs::PermissionsExt;
-        let _guard = crate::TEST_ENV_LOCK.lock().unwrap();
         let dir = tempfile::tempdir().unwrap();
-        unsafe { std::env::set_var("GCLI_CONFIG_DIR", dir.path()) };
-        sample_config().save().unwrap();
-        let mode = std::fs::metadata(dir.path().join("config.toml"))
-            .unwrap()
-            .permissions()
-            .mode();
+        let path = dir.path().join("config.toml");
+        sample_config().save_to(&path).unwrap();
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600, "config.toml must be chmod 0600");
-        unsafe { std::env::remove_var("GCLI_CONFIG_DIR") };
     }
 
     #[test]
@@ -406,100 +377,63 @@ mod tests {
 
     #[test]
     fn roundtrip_toml() {
-        let _guard = crate::TEST_ENV_LOCK.lock().unwrap();
         let dir = tempfile::tempdir().unwrap();
-        unsafe { std::env::set_var("GCLI_CONFIG_DIR", dir.path()) };
+        let path = dir.path().join("config.toml");
         let c = sample_config();
-        c.save().unwrap();
-        let loaded = Config::load().unwrap();
-        assert_eq!(c, loaded);
-        unsafe { std::env::remove_var("GCLI_CONFIG_DIR") };
+        c.save_to(&path).unwrap();
+        assert_eq!(Config::load_from(&path).unwrap(), c);
     }
 
     #[test]
     fn load_missing_file_is_default() {
-        let _guard = crate::TEST_ENV_LOCK.lock().unwrap();
         let dir = tempfile::tempdir().unwrap();
-        unsafe { std::env::set_var("GCLI_CONFIG_DIR", dir.path()) };
-        assert_eq!(Config::load().unwrap(), Config::default());
-        unsafe { std::env::remove_var("GCLI_CONFIG_DIR") };
+        let loaded = Config::load_from(&dir.path().join("config.toml")).unwrap();
+        assert_eq!(loaded, Config::default());
     }
 
     #[test]
     fn load_invalid_toml_is_config_error() {
-        let _guard = crate::TEST_ENV_LOCK.lock().unwrap();
         let dir = tempfile::tempdir().unwrap();
-        unsafe { std::env::set_var("GCLI_CONFIG_DIR", dir.path()) };
-        std::fs::write(dir.path().join("config.toml"), "not [valid toml").unwrap();
-        assert!(matches!(Config::load(), Err(Error::Config { .. })));
-        unsafe { std::env::remove_var("GCLI_CONFIG_DIR") };
-    }
-
-    // Single test fn: precedence + overrides mutate process env; hold the lock so
-    // no other env-touching test runs in parallel.
-    #[test]
-    fn active_profile_precedence_and_env_overrides() {
-        let _guard = crate::TEST_ENV_LOCK.lock().unwrap();
-        let c = sample_config();
-
-        // explicit wins over everything, including unknown names erroring
-        let (name, p) = c.active_profile(Some("b")).unwrap();
-        assert_eq!(name, "b");
-        assert_eq!(p.username.as_deref(), Some("u"));
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "not [valid toml").unwrap();
         assert!(matches!(
-            c.active_profile(Some("zzz")),
+            Config::load_from(&path),
             Err(Error::Config { .. })
         ));
+    }
 
-        // env beats current_profile
-        unsafe { std::env::set_var("GRAFANA_CLI_PROFILE", "b") };
-        let (name, _) = c.active_profile(None).unwrap();
+    #[test]
+    fn active_profile_prefers_env_profile_and_returns_it_as_stored() {
+        let (name, profile) = sample_config().active_profile(Some("b")).unwrap();
         assert_eq!(name, "b");
-        // explicit beats env
-        let (name, _) = c.active_profile(Some("a")).unwrap();
-        assert_eq!(name, "a");
-        unsafe { std::env::remove_var("GRAFANA_CLI_PROFILE") };
+        assert_eq!(profile, basic_profile());
+    }
 
-        // current_profile used when nothing else
-        let (name, _) = c.active_profile(None).unwrap();
+    #[test]
+    fn active_profile_falls_back_to_current_profile() {
+        let (name, profile) = sample_config().active_profile(None).unwrap();
         assert_eq!(name, "a");
+        assert_eq!(profile, token_profile());
+    }
 
-        // no current_profile, no profiles available -> error listing
-        let empty = Config::default();
-        let err = empty.active_profile(None).unwrap_err();
+    #[test]
+    fn active_profile_unknown_env_profile_lists_available() {
+        let err = sample_config().active_profile(Some("zzz")).unwrap_err();
+        assert!(
+            matches!(&err, Error::Config { message }
+                if message == "profile 'zzz' not found; available: a, b"),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn active_profile_without_any_profile_is_config_error() {
+        let err = Config::default().active_profile(None).unwrap_err();
         assert!(matches!(err, Error::Config { .. }));
-
-        // one-shot overrides
-        unsafe {
-            std::env::set_var("GRAFANA_CLI_URL", "https://override.example.com");
-            std::env::set_var("GRAFANA_CLI_TOKEN", "envtok");
-        }
-        let (_, p) = c.active_profile(Some("a")).unwrap();
-        assert_eq!(p.url, "https://override.example.com");
-        assert_eq!(p.token.as_deref(), Some("envtok"));
-        unsafe {
-            std::env::remove_var("GRAFANA_CLI_URL");
-            std::env::remove_var("GRAFANA_CLI_TOKEN");
-        }
-
-        // username/password overrides apply to basic profile
-        unsafe {
-            std::env::set_var("GRAFANA_CLI_USERNAME", "envu");
-            std::env::set_var("GRAFANA_CLI_PASSWORD", "envp");
-        }
-        let (_, p) = c.active_profile(Some("b")).unwrap();
-        assert_eq!(p.username.as_deref(), Some("envu"));
-        assert_eq!(p.password.as_deref(), Some("envp"));
-        unsafe {
-            std::env::remove_var("GRAFANA_CLI_USERNAME");
-            std::env::remove_var("GRAFANA_CLI_PASSWORD");
-        }
     }
 
     #[test]
     fn missing_current_profile_errors_with_available_list() {
-        // active_profile reads GRAFANA_CLI_PROFILE; serialize against other env tests.
-        let _guard = crate::TEST_ENV_LOCK.lock().unwrap();
         let mut c = sample_config();
         c.current_profile = Some("gone".into());
         let err = c.active_profile(None).unwrap_err();

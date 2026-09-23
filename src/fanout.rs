@@ -1,10 +1,15 @@
-use crate::config::{Config, Profile, apply_env_overrides};
+use crate::config::{Config, Profile};
+use crate::environment::ProfileOverrides;
 use crate::{Error, Result};
 
+/// The profiles to run, as stored: `--profile a,b` (order kept), else
+/// `--all-profiles` (sorted), else the active profile (`env_profile`, then
+/// `current_profile`). Overrides are applied afterwards by `apply_overrides`.
 pub fn resolve_profiles(
     profiles_flag: Option<&str>,
     all: bool,
     config: &Config,
+    env_profile: Option<&str>,
 ) -> Result<Vec<(String, Profile)>> {
     if let Some(csv) = profiles_flag {
         let names: Vec<&str> = csv
@@ -12,31 +17,20 @@ pub fn resolve_profiles(
             .map(str::trim)
             .filter(|n| !n.is_empty())
             .collect();
-        let available = || -> String {
-            if config.profiles.is_empty() {
-                "(none)".into()
-            } else {
-                config
-                    .profiles
-                    .keys()
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            }
-        };
         if names.is_empty() {
             return Err(Error::Config {
-                message: format!("--profile is empty; available: {}", available()),
+                message: format!("--profile is empty; available: {}", config.available()),
             });
         }
         let mut out = Vec::new();
         for name in names {
             let profile = config.profiles.get(name).ok_or_else(|| Error::Config {
-                message: format!("profile '{name}' not found; available: {}", available()),
+                message: format!(
+                    "profile '{name}' not found; available: {}",
+                    config.available()
+                ),
             })?;
-            // GRAFANA_CLI_{URL,TOKEN,USERNAME,PASSWORD} override every selected
-            // profile, like Config::active_profile does for the single case.
-            out.push((name.to_string(), apply_env_overrides(profile.clone())));
+            out.push((name.to_string(), profile.clone()));
         }
         return Ok(out);
     }
@@ -49,11 +43,23 @@ pub fn resolve_profiles(
         return Ok(config
             .profiles
             .iter()
-            .map(|(name, profile)| (name.clone(), apply_env_overrides(profile.clone())))
+            .map(|(name, profile)| (name.clone(), profile.clone()))
             .collect());
     }
-    let (name, profile) = config.active_profile(None)?;
-    Ok(vec![(name, profile)])
+    Ok(vec![config.active_profile(env_profile)?])
+}
+
+/// Applies the `GRAFANA_CLI_*` overrides, then the flag overrides on top, to
+/// every selected profile: config file < environment < flags.
+pub fn apply_overrides(
+    profiles: Vec<(String, Profile)>,
+    env: ProfileOverrides,
+    flags: ProfileOverrides,
+) -> Vec<(String, Profile)> {
+    profiles
+        .into_iter()
+        .map(|(name, profile)| (name, flags.clone().apply(env.clone().apply(profile))))
+        .collect()
 }
 
 pub async fn run<T, F, Fut>(profiles: Vec<(String, Profile)>, f: F) -> Vec<(String, Result<T>)>
@@ -127,7 +133,7 @@ mod tests {
     #[test]
     fn csv_flag_wins_and_keeps_order() {
         let c = sample();
-        let got = resolve_profiles(Some("c,a"), false, &c).unwrap();
+        let got = resolve_profiles(Some("c,a"), false, &c, None).unwrap();
         assert_eq!(
             got.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(),
             vec!["c", "a"]
@@ -135,9 +141,15 @@ mod tests {
     }
 
     #[test]
+    fn csv_flag_beats_env_profile() {
+        let got = resolve_profiles(Some("a"), false, &sample(), Some("c")).unwrap();
+        assert_eq!(got[0].0, "a");
+    }
+
+    #[test]
     fn csv_unknown_name_lists_available() {
         let c = sample();
-        let err = resolve_profiles(Some("a,zzz"), false, &c).unwrap_err();
+        let err = resolve_profiles(Some("a,zzz"), false, &c, None).unwrap_err();
         match err {
             Error::Config { message } => {
                 assert!(message.contains("zzz") && message.contains("a") && message.contains("b"));
@@ -149,7 +161,7 @@ mod tests {
     #[test]
     fn all_flag_returns_sorted_everything() {
         let c = sample();
-        let got = resolve_profiles(None, true, &c).unwrap();
+        let got = resolve_profiles(None, true, &c, None).unwrap();
         assert_eq!(
             got.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(),
             vec!["a", "b", "c"]
@@ -159,7 +171,7 @@ mod tests {
     #[test]
     fn all_flag_with_no_profiles_is_error() {
         assert!(matches!(
-            resolve_profiles(None, true, &Config::default()),
+            resolve_profiles(None, true, &Config::default(), None),
             Err(Error::Config { .. })
         ));
     }
@@ -167,43 +179,42 @@ mod tests {
     #[test]
     fn csv_flag_beats_all_flag() {
         let c = sample();
-        let got = resolve_profiles(Some("a"), true, &c).unwrap();
+        let got = resolve_profiles(Some("a"), true, &c, None).unwrap();
         assert_eq!(got.len(), 1);
     }
 
     #[test]
     fn single_active_profile_when_no_flags() {
-        let _guard = crate::TEST_ENV_LOCK.lock().unwrap();
         let c = sample();
-        let got = resolve_profiles(None, false, &c).unwrap();
+        let got = resolve_profiles(None, false, &c, None).unwrap();
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].0, "b");
     }
 
     #[test]
     fn single_profile_uses_env_when_set() {
-        let _guard = crate::TEST_ENV_LOCK.lock().unwrap();
-        unsafe { std::env::set_var("GRAFANA_CLI_PROFILE", "c") };
-        let got = resolve_profiles(None, false, &sample()).unwrap();
+        let got = resolve_profiles(None, false, &sample(), Some("c")).unwrap();
         assert_eq!(got[0].0, "c");
-        unsafe { std::env::remove_var("GRAFANA_CLI_PROFILE") };
+    }
+
+    fn env_overrides() -> ProfileOverrides {
+        ProfileOverrides {
+            url: Some("https://env".into()),
+            token: Some("envtok".into()),
+            ..Default::default()
+        }
     }
 
     #[test]
     fn csv_and_all_flags_apply_env_overrides() {
-        let _guard = crate::TEST_ENV_LOCK.lock().unwrap();
-        let unset = resolve_profiles(Some("c,a"), false, &sample()).unwrap();
-        unsafe {
-            std::env::set_var("GRAFANA_CLI_URL", "https://env");
-            std::env::set_var("GRAFANA_CLI_TOKEN", "envtok");
-        }
-        let csv = resolve_profiles(Some("c,a"), false, &sample()).unwrap();
-        let all = resolve_profiles(None, true, &sample()).unwrap();
-        unsafe {
-            std::env::remove_var("GRAFANA_CLI_URL");
-            std::env::remove_var("GRAFANA_CLI_TOKEN");
-        }
-        // without the env vars every profile keeps its own settings
+        let unset = resolve_profiles(Some("c,a"), false, &sample(), None).unwrap();
+        let csv = apply_overrides(unset.clone(), env_overrides(), Default::default());
+        let all = apply_overrides(
+            resolve_profiles(None, true, &sample(), None).unwrap(),
+            env_overrides(),
+            Default::default(),
+        );
+        // resolved profiles keep their own settings until overrides are applied
         assert_eq!(unset[0].1.url, "https://c");
         assert_eq!(unset[1].1.token.as_deref(), Some("t"));
         assert_eq!(all.len(), 3);
@@ -211,6 +222,20 @@ mod tests {
             assert_eq!(p.url, "https://env", "{name}");
             assert_eq!(p.token.as_deref(), Some("envtok"), "{name}");
         }
+    }
+
+    #[test]
+    fn flag_overrides_beat_env_overrides() {
+        let selected = resolve_profiles(Some("a"), false, &sample(), None).unwrap();
+        let flags = ProfileOverrides {
+            token: Some("flagtok".into()),
+            ..Default::default()
+        };
+
+        let got = apply_overrides(selected, env_overrides(), flags);
+
+        assert_eq!(got[0].1.url, "https://env");
+        assert_eq!(got[0].1.token.as_deref(), Some("flagtok"));
     }
 
     #[tokio::test]

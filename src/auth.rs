@@ -1,27 +1,36 @@
 use crate::{Error, OAuthConfig, Profile, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
 pub enum AuthProvider {
     Token(String),
-    Basic {
-        user: String,
-        pass: String,
-    },
-    OAuth {
-        profile_name: String,
-        config: OAuthConfig,
-    },
+    Basic { user: String, pass: String },
+    OAuth(OAuthSource),
 }
 
-pub fn from_profile(profile_name: &str, profile: &Profile) -> Result<AuthProvider> {
+/// An OAuth client-credentials profile and the token cache file it uses.
+#[derive(Debug, Clone)]
+pub struct OAuthSource {
+    pub profile_name: String,
+    pub config: OAuthConfig,
+    pub cache_path: PathBuf,
+}
+
+/// `cache_dir` (`GCLI_CACHE_DIR`) locates the OAuth token cache; it is only
+/// resolved for OAuth profiles.
+pub fn from_profile(
+    profile_name: &str,
+    profile: &Profile,
+    cache_dir: Option<&Path>,
+) -> Result<AuthProvider> {
     if let Some(config) = &profile.oauth {
-        return Ok(AuthProvider::OAuth {
+        return Ok(AuthProvider::OAuth(OAuthSource {
             profile_name: profile_name.to_string(),
             config: config.clone(),
-        });
+            cache_path: token_cache_path(cache_dir)?,
+        }));
     }
     if profile.token.is_some() || profile.token_command.is_some() {
         let token = match &profile.token {
@@ -51,15 +60,12 @@ pub fn from_profile(profile_name: &str, profile: &Profile) -> Result<AuthProvide
     })
 }
 
-pub async fn get_oauth_token(
-    profile_name: &str,
-    config: &OAuthConfig,
-    http: &reqwest::Client,
-) -> Result<String> {
-    let key = format!("{profile_name}:{}", config.client_id);
-    let path = cache_path()?;
+pub async fn get_oauth_token(source: &OAuthSource, http: &reqwest::Client) -> Result<String> {
+    let config = &source.config;
+    let key = format!("{}:{}", source.profile_name, config.client_id);
+    let path = &source.cache_path;
     let now = chrono::Utc::now().timestamp();
-    if let Some(entry) = read_cache(&path).get(&key)
+    if let Some(entry) = read_cache(path).get(&key)
         && entry.expires_at_unix > now
     {
         return Ok(entry.token.clone());
@@ -121,18 +127,21 @@ pub async fn get_oauth_token(
         expires_at_unix: now + expires_in - 60,
         token: token.clone(),
     };
-    write_cache_entry(&path, &key, &entry)?;
+    write_cache_entry(path, &key, &entry)?;
     Ok(token)
 }
 
-pub fn invalidate(profile_name: &str, client_id: &str) {
-    let Ok(path) = cache_path() else { return };
-    let mut cache = read_cache(&path);
+pub fn invalidate(source: &OAuthSource) {
+    let path = &source.cache_path;
+    let mut cache = read_cache(path);
     if cache
-        .remove(&format!("{profile_name}:{client_id}"))
+        .remove(&format!(
+            "{}:{}",
+            source.profile_name, source.config.client_id
+        ))
         .is_some()
     {
-        let _ = write_whole_cache(&path, &cache);
+        let _ = write_whole_cache(path, &cache);
     }
 }
 
@@ -160,9 +169,11 @@ pub(crate) fn exec_command(cmd: &[String], kind: &str) -> Result<String> {
     Ok(stdout)
 }
 
-fn cache_path() -> Result<PathBuf> {
-    if let Ok(dir) = std::env::var("GCLI_CACHE_DIR") {
-        return Ok(PathBuf::from(dir).join("tokens.json"));
+/// Where the OAuth token cache lives: `tokens.json` in `cache_dir`
+/// (`GCLI_CACHE_DIR`) when given, else in the platform cache directory.
+pub fn token_cache_path(cache_dir: Option<&Path>) -> Result<PathBuf> {
+    if let Some(dir) = cache_dir {
+        return Ok(dir.join("tokens.json"));
     }
     let dirs =
         directories::ProjectDirs::from("", "", "grafana-cli").ok_or_else(|| Error::Config {
@@ -233,6 +244,15 @@ mod tests {
         tempfile::tempdir().unwrap()
     }
 
+    // Profile "p" with `config`, caching its tokens in `dir`/tokens.json.
+    fn source(dir: &tempfile::TempDir, config: OAuthConfig) -> OAuthSource {
+        OAuthSource {
+            profile_name: "p".into(),
+            config,
+            cache_path: dir.path().join("tokens.json"),
+        }
+    }
+
     fn write_cache_file(dir: &std::path::Path, body: &str) {
         std::fs::write(dir.join("tokens.json"), body).unwrap();
     }
@@ -248,7 +268,7 @@ mod tests {
             token: Some("tok".into()),
             ..Default::default()
         };
-        assert!(matches!(from_profile("p", &p), Ok(AuthProvider::Token(t)) if t == "tok"));
+        assert!(matches!(from_profile("p", &p, None), Ok(AuthProvider::Token(t)) if t == "tok"));
     }
 
     #[test]
@@ -258,7 +278,7 @@ mod tests {
             token_command: Some(vec!["echo tok".into()]),
             ..Default::default()
         };
-        assert!(matches!(from_profile("p", &p), Ok(AuthProvider::Token(t)) if t == "tok"));
+        assert!(matches!(from_profile("p", &p, None), Ok(AuthProvider::Token(t)) if t == "tok"));
     }
 
     #[test]
@@ -268,9 +288,9 @@ mod tests {
             token_command: Some(cmd.iter().map(|s| s.to_string()).collect()),
             ..Default::default()
         };
-        let e = from_profile("p", &mk(&["exit 3"])).unwrap_err();
+        let e = from_profile("p", &mk(&["exit 3"]), None).unwrap_err();
         assert!(matches!(e, Error::Auth { kind, .. } if kind == "token_command"));
-        let e = from_profile("p", &mk(&["printf ''"])).unwrap_err();
+        let e = from_profile("p", &mk(&["printf ''"]), None).unwrap_err();
         assert!(matches!(e, Error::Auth { kind, .. } if kind == "token_command"));
     }
 
@@ -283,7 +303,7 @@ mod tests {
             ..Default::default()
         };
         assert!(
-            matches!(from_profile("p", &p), Ok(AuthProvider::Basic { user, pass }) if user == "usr" && pass == "pw")
+            matches!(from_profile("p", &p, None), Ok(AuthProvider::Basic { user, pass }) if user == "usr" && pass == "pw")
         );
     }
 
@@ -296,7 +316,7 @@ mod tests {
             ..Default::default()
         };
         assert!(
-            matches!(from_profile("p", &p), Ok(AuthProvider::Basic { user, pass }) if user == "usr" && pass == "pw")
+            matches!(from_profile("p", &p, None), Ok(AuthProvider::Basic { user, pass }) if user == "usr" && pass == "pw")
         );
     }
 
@@ -308,20 +328,23 @@ mod tests {
             password_command: Some(vec!["exit 1".into()]),
             ..Default::default()
         };
-        let e = from_profile("p", &p).unwrap_err();
+        let e = from_profile("p", &p, None).unwrap_err();
         assert!(matches!(e, Error::Auth { kind, .. } if kind == "password_command"));
     }
 
     #[test]
-    fn from_profile_oauth() {
+    fn from_profile_oauth_caches_tokens_in_cache_dir() {
         let p = Profile {
             url: "u".into(),
             oauth: Some(oauth_config("https://sso/token")),
             ..Default::default()
         };
-        assert!(
-            matches!(from_profile("prod", &p), Ok(AuthProvider::OAuth { profile_name, .. }) if profile_name == "prod")
-        );
+        let dir = Path::new("/cache");
+        assert!(matches!(
+            from_profile("prod", &p, Some(dir)),
+            Ok(AuthProvider::OAuth(s))
+                if s.profile_name == "prod" && s.cache_path == dir.join("tokens.json")
+        ));
     }
 
     #[test]
@@ -330,15 +353,15 @@ mod tests {
             url: "u".into(),
             ..Default::default()
         };
-        assert!(matches!(from_profile("p", &p), Err(Error::Config { .. })));
+        assert!(matches!(
+            from_profile("p", &p, None),
+            Err(Error::Config { .. })
+        ));
     }
 
     #[tokio::test]
-    #[allow(clippy::await_holding_lock)]
     async fn oauth_fresh_cache_skips_network() {
-        let _guard = crate::TEST_ENV_LOCK.lock().unwrap();
         let dir = cache_dir();
-        unsafe { std::env::set_var("GCLI_CACHE_DIR", dir.path()) };
         let expires = chrono::Utc::now().timestamp() + 3000;
         write_cache_file(
             dir.path(),
@@ -346,19 +369,15 @@ mod tests {
         );
         // token_url unroutable: a network fetch would fail the test
         let cfg = oauth_config("http://127.0.0.1:1/token");
-        let tok = get_oauth_token("p", &cfg, &reqwest::Client::new())
+        let tok = get_oauth_token(&source(&dir, cfg), &reqwest::Client::new())
             .await
             .unwrap();
         assert_eq!(tok, "cached");
-        unsafe { std::env::remove_var("GCLI_CACHE_DIR") };
     }
 
     #[tokio::test]
-    #[allow(clippy::await_holding_lock)]
     async fn oauth_fetch_caches_with_expiry_margin() {
-        let _guard = crate::TEST_ENV_LOCK.lock().unwrap();
         let dir = cache_dir();
-        unsafe { std::env::set_var("GCLI_CACHE_DIR", dir.path()) };
 
         let server = wiremock::MockServer::start().await;
         wiremock::Mock::given(wiremock::matchers::method("POST"))
@@ -371,7 +390,7 @@ mod tests {
             .await;
 
         let cfg = oauth_config(&format!("{}/token", server.uri()));
-        let tok = get_oauth_token("p", &cfg, &reqwest::Client::new())
+        let tok = get_oauth_token(&source(&dir, cfg), &reqwest::Client::new())
             .await
             .unwrap();
         assert_eq!(tok, "fresh");
@@ -383,15 +402,11 @@ mod tests {
         let expires = entry["expires_at_unix"].as_i64().unwrap();
         assert!((expires - (now + 3600 - 60)).abs() <= 5, "{expires}");
         server.verify().await;
-        unsafe { std::env::remove_var("GCLI_CACHE_DIR") };
     }
 
     #[tokio::test]
-    #[allow(clippy::await_holding_lock)]
     async fn oauth_corrupt_cache_is_cold() {
-        let _guard = crate::TEST_ENV_LOCK.lock().unwrap();
         let dir = cache_dir();
-        unsafe { std::env::set_var("GCLI_CACHE_DIR", dir.path()) };
         write_cache_file(dir.path(), "not json at all");
 
         let server = wiremock::MockServer::start().await;
@@ -405,20 +420,16 @@ mod tests {
             .await;
 
         let cfg = oauth_config(&format!("{}/token", server.uri()));
-        let tok = get_oauth_token("p", &cfg, &reqwest::Client::new())
+        let tok = get_oauth_token(&source(&dir, cfg), &reqwest::Client::new())
             .await
             .unwrap();
         assert_eq!(tok, "again");
         assert_eq!(read_cache_file(dir.path())["p:cid"]["token"], "again");
-        unsafe { std::env::remove_var("GCLI_CACHE_DIR") };
     }
 
     #[tokio::test]
-    #[allow(clippy::await_holding_lock)]
     async fn oauth_expired_cache_refetches() {
-        let _guard = crate::TEST_ENV_LOCK.lock().unwrap();
         let dir = cache_dir();
-        unsafe { std::env::set_var("GCLI_CACHE_DIR", dir.path()) };
         let past = chrono::Utc::now().timestamp() - 1000;
         write_cache_file(
             dir.path(),
@@ -436,19 +447,15 @@ mod tests {
             .await;
 
         let cfg = oauth_config(&format!("{}/token", server.uri()));
-        let tok = get_oauth_token("p", &cfg, &reqwest::Client::new())
+        let tok = get_oauth_token(&source(&dir, cfg), &reqwest::Client::new())
             .await
             .unwrap();
         assert_eq!(tok, "refreshed");
-        unsafe { std::env::remove_var("GCLI_CACHE_DIR") };
     }
 
     #[tokio::test]
-    #[allow(clippy::await_holding_lock)]
     async fn oauth_public_client_omits_secret() {
-        let _guard = crate::TEST_ENV_LOCK.lock().unwrap();
         let dir = cache_dir();
-        unsafe { std::env::set_var("GCLI_CACHE_DIR", dir.path()) };
 
         let server = wiremock::MockServer::start().await;
         wiremock::Mock::given(wiremock::matchers::method("POST"))
@@ -469,20 +476,16 @@ mod tests {
 
         let mut cfg = oauth_config(&format!("{}/token", server.uri()));
         cfg.client_secret = None;
-        let tok = get_oauth_token("p", &cfg, &reqwest::Client::new())
+        let tok = get_oauth_token(&source(&dir, cfg), &reqwest::Client::new())
             .await
             .unwrap();
         assert_eq!(tok, "pubtok");
         server.verify().await;
-        unsafe { std::env::remove_var("GCLI_CACHE_DIR") };
     }
 
     #[tokio::test]
-    #[allow(clippy::await_holding_lock)]
     async fn oauth_fetch_error_is_auth_kind() {
-        let _guard = crate::TEST_ENV_LOCK.lock().unwrap();
         let dir = cache_dir();
-        unsafe { std::env::set_var("GCLI_CACHE_DIR", dir.path()) };
 
         let server = wiremock::MockServer::start().await;
         wiremock::Mock::given(wiremock::matchers::method("POST"))
@@ -492,21 +495,18 @@ mod tests {
             .await;
 
         let cfg = oauth_config(&format!("{}/token", server.uri()));
-        let e = get_oauth_token("p", &cfg, &reqwest::Client::new())
+        let e = get_oauth_token(&source(&dir, cfg), &reqwest::Client::new())
             .await
             .unwrap_err();
         match e {
             Error::Auth { kind, .. } => assert_eq!(kind, "oauth"),
             other => panic!("{other:?}"),
         }
-        unsafe { std::env::remove_var("GCLI_CACHE_DIR") };
     }
 
     #[test]
     fn invalidate_removes_only_target_key() {
-        let _guard = crate::TEST_ENV_LOCK.lock().unwrap();
         let dir = cache_dir();
-        unsafe { std::env::set_var("GCLI_CACHE_DIR", dir.path()) };
         write_cache_file(
             dir.path(),
             &json!({
@@ -515,21 +515,18 @@ mod tests {
             })
             .to_string(),
         );
-        invalidate("p", "cid");
+        invalidate(&source(&dir, oauth_config("https://sso/token")));
         let cache = read_cache_file(dir.path());
         assert!(cache.get("p:cid").is_none());
         assert!(cache.get("other:cid").is_some());
-        unsafe { std::env::remove_var("GCLI_CACHE_DIR") };
     }
 
     #[cfg(unix)]
     #[test]
     fn cache_file_is_owner_only() {
         use std::os::unix::fs::PermissionsExt;
-        let _guard = crate::TEST_ENV_LOCK.lock().unwrap();
         let dir = cache_dir();
-        unsafe { std::env::set_var("GCLI_CACHE_DIR", dir.path()) };
-        let path = cache_path().unwrap();
+        let path = dir.path().join("tokens.json");
         write_cache_entry(
             &path,
             "p:cid",
@@ -541,16 +538,13 @@ mod tests {
         .unwrap();
         let mode = std::fs::metadata(&path).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600, "tokens.json must be chmod 0600");
-        unsafe { std::env::remove_var("GCLI_CACHE_DIR") };
     }
 
     #[test]
     fn invalidate_missing_file_is_noop() {
-        let _guard = crate::TEST_ENV_LOCK.lock().unwrap();
         let dir = cache_dir();
-        unsafe { std::env::set_var("GCLI_CACHE_DIR", dir.path()) };
-        invalidate("p", "cid");
-        unsafe { std::env::remove_var("GCLI_CACHE_DIR") };
+        invalidate(&source(&dir, oauth_config("https://sso/token")));
+        assert!(!dir.path().join("tokens.json").exists());
     }
 
     #[test]

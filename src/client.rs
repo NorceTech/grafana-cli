@@ -59,11 +59,8 @@ impl GrafanaClient {
         match &self.auth {
             AuthProvider::Token(token) => Ok(builder.bearer_auth(token)),
             AuthProvider::Basic { user, pass } => Ok(builder.basic_auth(user, Some(pass))),
-            AuthProvider::OAuth {
-                profile_name,
-                config,
-            } => {
-                let token = auth::get_oauth_token(profile_name, config, &self.http).await?;
+            AuthProvider::OAuth(source) => {
+                let token = auth::get_oauth_token(source, &self.http).await?;
                 Ok(builder.bearer_auth(token))
             }
         }
@@ -93,14 +90,10 @@ impl GrafanaClient {
             }
             if status.as_u16() == 401
                 && oauth_attempt == 0
-                && matches!(self.auth, AuthProvider::OAuth { .. })
+                && matches!(self.auth, AuthProvider::OAuth(_))
             {
-                if let AuthProvider::OAuth {
-                    profile_name,
-                    config,
-                } = &self.auth
-                {
-                    auth::invalidate(profile_name, &config.client_id);
+                if let AuthProvider::OAuth(source) = &self.auth {
+                    auth::invalidate(source);
                 }
                 oauth_attempt += 1;
                 continue;
@@ -245,7 +238,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[allow(clippy::await_holding_lock)]
     async fn token_auth_401_fails_fast() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
@@ -263,11 +255,8 @@ mod tests {
     }
 
     #[tokio::test]
-    #[allow(clippy::await_holding_lock)]
     async fn oauth_401_invalidates_refetches_retries_once() {
-        let _guard = crate::TEST_ENV_LOCK.lock().unwrap();
         let dir = tempfile::tempdir().unwrap();
-        unsafe { std::env::set_var("GCLI_CACHE_DIR", dir.path()) };
 
         let server = MockServer::start().await;
         // FIFO precedence: token endpoint returns tok1 once, then tok2
@@ -305,7 +294,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        let auth = AuthProvider::OAuth {
+        let auth = AuthProvider::OAuth(auth::OAuthSource {
             profile_name: "p".into(),
             config: crate::OAuthConfig {
                 token_url: format!("{}/token", server.uri()),
@@ -315,11 +304,11 @@ mod tests {
                 scopes: None,
                 audience: None,
             },
-        };
+            cache_path: dir.path().join("tokens.json"),
+        });
         let out = client(&server.uri(), auth).health().await.unwrap();
         assert_eq!(out["version"], "1");
         server.verify().await;
-        unsafe { std::env::remove_var("GCLI_CACHE_DIR") };
     }
 
     #[tokio::test]
