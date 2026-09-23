@@ -1,10 +1,11 @@
+use crate::Result;
 use crate::client::{Datasource, GrafanaClient, Reply};
-use crate::commands::{CommandOutput, QueryWindow};
+use crate::commands::{CommandOutput, QueryWindow, success_data};
 use crate::datasource::{self, Kind};
 use crate::output::{LogRecord, OutputMode};
 use crate::timeutil::{resolve_window, to_ns_string};
-use crate::{Error, Result};
 use chrono::{DateTime, SecondsFormat};
+use serde::Deserialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
 
@@ -66,14 +67,6 @@ impl LogsCmd {
     }
 }
 
-fn parse_error(what: &str) -> Error {
-    Error::Http {
-        status: 200,
-        body: String::new(),
-        message: Some(format!("loki response parse: {what}")),
-    }
-}
-
 /// Window bounds (ns strings) + the resolved Loki datasource for a query.
 async fn loki_context(
     client: &GrafanaClient,
@@ -89,11 +82,10 @@ async fn loki_context(
     Ok((to_ns_string(start), to_ns_string(end), ds.clone()))
 }
 
-fn string_array(value: &Value) -> Result<Vec<String>> {
-    let data = value
-        .get("data")
-        .ok_or_else(|| parse_error("missing data array"))?;
-    serde_json::from_value(data.clone()).map_err(|e| parse_error(&format!("data: {e}")))
+/// The names in a `labels` or `label/{label}/values` reply.
+fn string_array(reply: &Reply) -> Result<Vec<String>> {
+    let data = success_data(reply)?.ok_or_else(|| reply.malformed("no data array"))?;
+    Vec::<String>::deserialize(data).map_err(|e| reply.malformed(&format!("data: {e}")))
 }
 
 pub async fn search(
@@ -132,11 +124,10 @@ pub async fn search(
 
 /// The records of a `query_range` reply for `profile` and `datasource`.
 fn log_records(reply: &Reply, profile: &str, datasource: &str) -> Result<Vec<LogRecord>> {
-    let streams = reply
-        .body
-        .pointer("/data/result")
+    let streams = success_data(reply)?
+        .and_then(|data| data.get("result"))
         .and_then(Value::as_array)
-        .ok_or_else(|| parse_error("missing data.result array"))?;
+        .ok_or_else(|| reply.malformed("no data.result array"))?;
 
     // Keep the raw ns alongside the record: primary sort key must be true
     // (nanosecond) chronology, not the millisecond-truncated ts string.
@@ -146,22 +137,22 @@ fn log_records(reply: &Reply, profile: &str, datasource: &str) -> Result<Vec<Log
             stream
                 .get("stream")
                 .cloned()
-                .ok_or_else(|| parse_error("stream missing stream map"))?,
+                .ok_or_else(|| reply.malformed("stream without a stream label map"))?,
         )
-        .map_err(|e| parse_error(&format!("stream labels: {e}")))?;
+        .map_err(|e| reply.malformed(&format!("stream labels: {e}")))?;
         let entries = stream
             .get("values")
             .and_then(Value::as_array)
-            .ok_or_else(|| parse_error("stream missing values array"))?;
+            .ok_or_else(|| reply.malformed("stream without a values array"))?;
         for entry in entries {
             let pair = entry
                 .as_array()
                 .filter(|p| p.len() >= 2)
-                .ok_or_else(|| parse_error("entry is not a [ts, line] pair"))?;
+                .ok_or_else(|| reply.malformed("entry is not a [ts, line] pair"))?;
             let ns = pair[0]
                 .as_str()
                 .and_then(|s| s.parse::<i64>().ok())
-                .ok_or_else(|| parse_error("entry timestamp is not a ns integer"))?;
+                .ok_or_else(|| reply.malformed("entry timestamp is not integer nanoseconds"))?;
             records.push((
                 ns,
                 LogRecord {
@@ -205,7 +196,7 @@ pub async fn labels(
         )
         .await?;
     Ok(CommandOutput::Json(json_string_array(string_array(
-        &reply.body,
+        &reply,
     )?)))
 }
 
@@ -224,6 +215,97 @@ pub async fn label_values(
         )
         .await?;
     Ok(CommandOutput::Json(json_string_array(string_array(
-        &reply.body,
+        &reply,
     )?)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Error;
+    use serde_json::json;
+
+    fn records(body: Value) -> Result<Vec<LogRecord>> {
+        log_records(&Reply::ok(body), "p", "Loki")
+    }
+
+    fn streams(result: Value) -> Value {
+        json!({"status": "success", "data": {"resultType": "streams", "result": result}})
+    }
+
+    #[test]
+    fn entries_sort_by_nanosecond_timestamp_then_line() {
+        // One millisecond, entries 1 ns apart, newest listed first.
+        let body = streams(json!([
+            {"stream": {"job": "api"},
+             "values": [["1787925600000000002", "b"], ["1787925600000000001", "c"]]},
+            {"stream": {"job": "web"}, "values": [["1787925600000000001", "a"]]}
+        ]));
+
+        let got = records(body).unwrap();
+
+        let lines: Vec<&str> = got.iter().map(|r| r.line.as_str()).collect();
+        assert_eq!(lines, ["a", "c", "b"]);
+    }
+
+    #[test]
+    fn reply_without_data_is_a_response_error() {
+        let result = records(json!({"status": "success"}));
+
+        assert!(
+            matches!(result, Err(Error::Response { status: 200, .. })),
+            "{result:?}"
+        );
+    }
+
+    #[test]
+    fn stream_with_non_array_values_is_a_response_error() {
+        let body = streams(json!([{"stream": {"job": "api"}, "values": "api boom"}]));
+
+        let result = records(body);
+
+        assert!(
+            matches!(result, Err(Error::Response { status: 200, .. })),
+            "{result:?}"
+        );
+    }
+
+    #[test]
+    fn entry_with_non_integer_ns_is_a_response_error() {
+        // Fractional seconds, not Loki's integer nanoseconds.
+        let body = streams(json!([
+            {"stream": {"job": "api"}, "values": [["1787925600.5", "api boom"]]}
+        ]));
+
+        let result = records(body);
+
+        assert!(
+            matches!(result, Err(Error::Response { status: 200, .. })),
+            "{result:?}"
+        );
+    }
+
+    #[test]
+    fn error_status_is_http_with_the_upstream_error() {
+        let body = json!({"status": "error", "errorType": "bad_data", "error": "parse error"});
+
+        let result = records(body);
+
+        assert!(
+            matches!(&result, Err(Error::Http { status: 200, message: Some(m), .. }) if m == "parse error"),
+            "{result:?}"
+        );
+    }
+
+    #[test]
+    fn label_reply_with_non_string_names_is_a_response_error() {
+        let reply = Reply::ok(json!({"status": "success", "data": [1, 2]}));
+
+        let result = string_array(&reply);
+
+        assert!(
+            matches!(result, Err(Error::Response { status: 200, .. })),
+            "{result:?}"
+        );
+    }
 }

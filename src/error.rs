@@ -8,6 +8,9 @@ pub enum Error {
         body: String,
         message: Option<String>,
     },
+    // A 2xx reply gcli cannot use: not JSON, or JSON of an unexpected shape.
+    #[error("malformed response {status}: {message}")]
+    Response { status: u16, message: String },
     #[error("invalid url: {0}")]
     Url(String),
     #[error(transparent)]
@@ -74,7 +77,7 @@ fn with_causes(err: &dyn std::error::Error) -> String {
 }
 
 /// `text` cut to at most `max` chars; the cut never splits a char.
-fn clip(text: &str, max: usize) -> &str {
+pub(crate) fn clip(text: &str, max: usize) -> &str {
     text.char_indices()
         .nth(max)
         .map_or(text, |(end, _)| &text[..end])
@@ -85,6 +88,7 @@ pub fn emit_json_error(profile: Option<&str>, err: &Error) -> String {
         Error::Http {
             status, message, ..
         } => ("http", Some(*status), message.clone()),
+        Error::Response { status, message } => ("response", Some(*status), Some(message.clone())),
         Error::Url(_) => ("url", None, Some(err.to_string())),
         Error::Io(_) | Error::Transport { .. } => ("io", None, Some(err.to_string())),
         Error::Auth { .. } => ("auth", None, Some(err.to_string())),
@@ -105,7 +109,11 @@ pub fn emit_json_error(profile: Option<&str>, err: &Error) -> String {
 
 pub fn exit_code(err: &Error) -> i32 {
     match err {
-        Error::Http { .. } | Error::Url(_) | Error::Io(_) | Error::Transport { .. } => 1,
+        Error::Http { .. }
+        | Error::Response { .. }
+        | Error::Url(_)
+        | Error::Io(_)
+        | Error::Transport { .. } => 1,
         Error::Auth { .. } | Error::Config { .. } => 2,
         Error::NoDatasource { .. } | Error::AmbiguousDatasource { .. } => 2,
     }
@@ -194,6 +202,29 @@ mod tests {
     }
 
     #[test]
+    fn json_error_response_carries_the_reply_status() {
+        let e = Error::Response {
+            status: 203,
+            message: "invalid JSON (GET /api/health, content-type text/html): <html>".into(),
+        };
+
+        let v: serde_json::Value = serde_json::from_str(&emit_json_error(Some("p"), &e)).unwrap();
+        let keys: Vec<&str> = v["error"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(keys, ["kind", "message", "profile", "status"]);
+        assert_eq!(v["error"]["kind"], "response");
+        assert_eq!(v["error"]["status"], 203);
+        assert_eq!(
+            v["error"]["message"],
+            "invalid JSON (GET /api/health, content-type text/html): <html>"
+        );
+    }
+
+    #[test]
     fn transport_message_names_the_nested_cause() {
         let e = transport();
         let Error::Transport { source, .. } = &e else {
@@ -270,6 +301,13 @@ mod tests {
         assert_eq!(kind(&Error::Io(std::io::Error::other("e"))), "io");
         assert_eq!(kind(&transport()), "io");
         assert_eq!(
+            kind(&Error::Response {
+                status: 200,
+                message: "m".into()
+            }),
+            "response"
+        );
+        assert_eq!(
             kind(&Error::Auth {
                 kind: "k".into(),
                 message: "m".into()
@@ -310,6 +348,13 @@ mod tests {
         );
         assert_eq!(exit_code(&Error::Io(std::io::Error::other("e"))), 1);
         assert_eq!(exit_code(&transport()), 1);
+        assert_eq!(
+            exit_code(&Error::Response {
+                status: 200,
+                message: "m".into()
+            }),
+            1
+        );
         assert_eq!(
             exit_code(&Error::Auth {
                 kind: "k".into(),

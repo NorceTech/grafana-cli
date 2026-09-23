@@ -1,4 +1,5 @@
 use crate::auth::{self, AuthProvider};
+use crate::error::clip;
 use crate::{Error, Result};
 use reqwest::header::CONTENT_TYPE;
 use serde::{Deserialize, Serialize};
@@ -30,6 +31,38 @@ pub struct Reply {
     pub body: Value,
 }
 
+/// How much of a malformed body an `Error::Response` quotes, in chars.
+const SNIPPET_CHARS: usize = 200;
+
+impl ReplyMeta {
+    /// `Error::Response` for this reply, whose `body` is not what `what` says:
+    /// names the request path and content type and quotes the start of the
+    /// body, so an SSO proxy's HTML login page is recognisable.
+    pub fn malformed(&self, what: &str, body: &str) -> Error {
+        let body = body.trim();
+        let quoted = match clip(body, SNIPPET_CHARS) {
+            "" => "(empty body)".to_string(),
+            start if start.len() < body.len() => format!("{start}..."),
+            whole => whole.to_string(),
+        };
+        Error::Response {
+            status: self.status,
+            message: format!(
+                "{what} (GET {}, content-type {}): {quoted}",
+                self.path,
+                self.content_type.as_deref().unwrap_or("none"),
+            ),
+        }
+    }
+}
+
+impl Reply {
+    /// `Error::Response` for a body without the shape `what` describes.
+    pub fn malformed(&self, what: &str) -> Error {
+        self.meta.malformed(what, &self.body.to_string())
+    }
+}
+
 pub struct GrafanaClient {
     base_url: String,
     auth: AuthProvider,
@@ -50,12 +83,9 @@ impl GrafanaClient {
     }
 
     pub async fn datasources(&self) -> Result<Vec<Datasource>> {
-        let value = self.get_json("/api/datasources", &[]).await?.body;
-        serde_json::from_value(value).map_err(|e| Error::Http {
-            status: 200,
-            body: String::new(),
-            message: Some(format!("datasource parse: {e}")),
-        })
+        let reply = self.get_json("/api/datasources", &[]).await?;
+        Vec::<Datasource>::deserialize(&reply.body)
+            .map_err(|e| reply.malformed(&format!("unexpected datasource list: {e}")))
     }
 
     pub async fn proxy_request(
@@ -108,13 +138,10 @@ impl GrafanaClient {
                     status: status.as_u16(),
                     content_type,
                 };
-                return serde_json::from_str(&body)
-                    .map(|json| Reply { meta, body: json })
-                    .map_err(|e| Error::Http {
-                        status: status.as_u16(),
-                        body: body.clone(),
-                        message: Some(format!("invalid JSON: {e}")),
-                    });
+                return match serde_json::from_str(&body) {
+                    Ok(json) => Ok(Reply { meta, body: json }),
+                    Err(e) => Err(meta.malformed(&format!("invalid JSON: {e}"), &body)),
+                };
             }
             if status.as_u16() == 401
                 && oauth_attempt == 0
@@ -127,6 +154,21 @@ impl GrafanaClient {
                 continue;
             }
             return Err(Error::http(status.as_u16(), body));
+        }
+    }
+}
+
+#[cfg(test)]
+impl Reply {
+    /// A 200 JSON reply, for tests of the code that reshapes replies.
+    pub(crate) fn ok(body: Value) -> Self {
+        Self {
+            meta: ReplyMeta {
+                path: "/api/datasources/proxy/uid/u1/test".into(),
+                status: 200,
+                content_type: Some("application/json".into()),
+            },
+            body,
         }
     }
 }
@@ -251,7 +293,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn non_json_success_is_error() {
+    async fn non_json_success_is_a_response_error() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/api/health"))
@@ -262,7 +304,65 @@ mod tests {
             .health()
             .await
             .unwrap_err();
-        assert!(matches!(err, Error::Http { status: 200, .. }), "{err:?}");
+        assert!(
+            matches!(err, Error::Response { status: 200, .. }),
+            "{err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn html_login_page_is_recognisable_in_the_message() {
+        // An SSO proxy in front of Grafana answering with its login page.
+        let page = format!(
+            "<!DOCTYPE html><html><head><title>Sign in</title></head><body>{}TAIL</body></html>",
+            "x".repeat(300)
+        );
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/datasources"))
+            .respond_with(ResponseTemplate::new(200).set_body_raw(page, "text/html; charset=utf-8"))
+            .mount(&server)
+            .await;
+
+        let err = client(&server.uri(), AuthProvider::Token("t".into()))
+            .datasources()
+            .await
+            .unwrap_err();
+
+        let Error::Response { status, message } = &err else {
+            panic!("{err:?}");
+        };
+        assert_eq!(*status, 200);
+        assert!(message.contains("text/html"), "content type: {message}");
+        assert!(message.contains("/api/datasources"), "path: {message}");
+        assert!(
+            message.contains("<title>Sign in</title>"),
+            "body start: {message}"
+        );
+        assert!(
+            !message.contains("TAIL"),
+            "body beyond the snippet: {message}"
+        );
+    }
+
+    #[tokio::test]
+    async fn datasource_list_of_unexpected_shape_is_a_response_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/datasources"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"datasources": []})))
+            .mount(&server)
+            .await;
+
+        let err = client(&server.uri(), AuthProvider::Token("t".into()))
+            .datasources()
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(&err, Error::Response { status: 200, message } if message.contains("/api/datasources")),
+            "{err:?}"
+        );
     }
 
     #[tokio::test]

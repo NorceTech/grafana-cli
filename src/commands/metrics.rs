@@ -1,6 +1,6 @@
 use crate::Result;
-use crate::client::{Datasource, GrafanaClient};
-use crate::commands::{CommandOutput, QueryWindow};
+use crate::client::{Datasource, GrafanaClient, Reply};
+use crate::commands::{CommandOutput, QueryWindow, success_data};
 use crate::datasource::Kind;
 use crate::output::OutputMode;
 use crate::timeutil::{default_step_secs, resolve_window, to_epoch_secs};
@@ -74,26 +74,14 @@ fn cell(v: &Value) -> String {
     }
 }
 
-/// Guard the Prometheus envelope; returns data.result on success.
-fn prom_result(body: Value, expected_type: &str) -> Result<Vec<Value>> {
-    if body.get("status").and_then(Value::as_str) != Some("success") {
-        return Err(Error::Http {
-            status: 200,
-            body: body.to_string(),
-            message: body
-                .get("error")
-                .and_then(Value::as_str)
-                .map(str::to_string),
-        });
-    }
-    let data = body.get("data").ok_or_else(|| Error::Config {
-        message: "prometheus response missing data".into(),
-    })?;
+/// `data.result` of a Prometheus reply whose `resultType` is `expected_type`.
+fn prom_result(reply: &Reply, expected_type: &str) -> Result<Vec<Value>> {
+    let data = success_data(reply)?.ok_or_else(|| reply.malformed("no data"))?;
     let rt = data.get("resultType").and_then(Value::as_str).unwrap_or("");
     if rt != expected_type {
-        return Err(Error::Config {
-            message: format!("unexpected resultType '{rt}' (expected '{expected_type}')"),
-        });
+        return Err(reply.malformed(&format!(
+            "unexpected resultType '{rt}' (expected '{expected_type}')"
+        )));
     }
     Ok(data
         .get("result")
@@ -128,7 +116,7 @@ pub async fn instant(
     let reply = client
         .proxy_request(&ds.uid, "api/v1/query", &pairs)
         .await?;
-    let result = prom_result(reply.body, "vector")?;
+    let result = prom_result(&reply, "vector")?;
     let mut records = Vec::new();
     for item in &result {
         let Some(pair) = item.get("value").and_then(Value::as_array) else {
@@ -239,7 +227,7 @@ pub async fn range(
     let reply = client
         .proxy_request(&ds.uid, "api/v1/query_range", &pairs)
         .await?;
-    let result = prom_result(reply.body, "matrix")?;
+    let result = prom_result(&reply, "matrix")?;
     let (records, rows) = flatten_matrix(&result);
     if mode == OutputMode::Table {
         return Ok(table(["metric", "timestamp", "value"], rows));
@@ -270,7 +258,7 @@ mod tests {
                 {"metric": {"job": "api"}, "values": [[1759372700, "1"], [1759372800, "2"]]}
             ]}
         });
-        let result = prom_result(body, "matrix").unwrap();
+        let result = prom_result(&Reply::ok(body), "matrix").unwrap();
         let (records, rows) = flatten_matrix(&result);
         assert_eq!(
             Value::Array(records),
@@ -314,23 +302,50 @@ mod tests {
         assert_eq!(rows.len(), 1);
     }
 
-    #[test]
-    fn non_success_status_is_error() {
-        let err = prom_result(
-            json!({"status": "error", "errorType": "bad_data", "error": "parse error"}),
-            "vector",
-        )
-        .unwrap_err();
-        assert!(err.to_string().contains("parse error"), "{err}");
+    fn prom_err(body: Value) -> Error {
+        prom_result(&Reply::ok(body), "vector").unwrap_err()
     }
 
     #[test]
-    fn wrong_result_type_is_error() {
-        let err = prom_result(
-            json!({"status": "success", "data": {"resultType": "scalar", "result": []}}),
-            "vector",
-        )
-        .unwrap_err();
+    fn error_status_is_http_with_the_upstream_error() {
+        let err =
+            prom_err(json!({"status": "error", "errorType": "bad_data", "error": "parse error"}));
+
+        assert!(
+            matches!(&err, Error::Http { status: 200, message: Some(m), .. } if m == "parse error"),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn wrong_result_type_is_a_response_error() {
+        let err =
+            prom_err(json!({"status": "success", "data": {"resultType": "scalar", "result": []}}));
+
+        assert!(
+            matches!(err, Error::Response { status: 200, .. }),
+            "{err:?}"
+        );
         assert!(err.to_string().contains("scalar"), "{err}");
+    }
+
+    #[test]
+    fn missing_data_is_a_response_error() {
+        let err = prom_err(json!({"status": "success"}));
+
+        assert!(
+            matches!(err, Error::Response { status: 200, .. }),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn missing_status_is_a_response_error() {
+        let err = prom_err(json!({"data": {"resultType": "vector", "result": []}}));
+
+        assert!(
+            matches!(err, Error::Response { status: 200, .. }),
+            "{err:?}"
+        );
     }
 }

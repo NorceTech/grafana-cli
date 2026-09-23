@@ -104,6 +104,50 @@ async fn s11b_error_schema_config_and_http() {
     );
 }
 
+// An SSO proxy in front of Grafana answering 200 with its HTML login page is
+// kind "response" with the reply's status, and the message shows what came
+// back instead of JSON.
+#[tokio::test]
+async fn s11c_error_schema_malformed_reply() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/health"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            "<!DOCTYPE html><html><head><title>Sign in</title></head><body></body></html>",
+            "text/html; charset=utf-8",
+        ))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let config = token_config(&server.uri());
+
+    let out = spawn_gcli(
+        &["health"],
+        &[("GCLI_CONFIG_DIR", config.path().to_str().unwrap())],
+    );
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "stderr={stderr}");
+    assert!(
+        out.stdout.is_empty(),
+        "{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    let err: Value = serde_json::from_str(stderr.trim()).expect("stderr JSON");
+    assert_eq!(err["error"]["kind"], "response");
+    assert_eq!(err["error"]["status"], 200);
+    assert_eq!(err["error"]["profile"], "p");
+    let message = err["error"]["message"].as_str().unwrap_or_default();
+    assert!(message.contains("text/html"), "{message}");
+    assert!(message.contains("<title>Sign in</title>"), "{message}");
+    server.verify().await;
+    write_transcript(
+        "s11c_malformed_reply.txt",
+        "gcli health (200 text/html login page)",
+        &out,
+    );
+}
+
 const HELP_TARGETS: &[&[&str]] = &[
     &[],
     &["profile"],

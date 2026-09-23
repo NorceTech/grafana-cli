@@ -350,16 +350,20 @@ Every error is a single JSON line on stderr:
 {"error":{"kind":"config","message":"config error: profile 'missing' not found; available: (none)","profile":"missing","status":null}}
 ```
 
-The `error` object always has the four keys `profile`, `kind`, `status`, `message`. `profile` names the failing profile (null when none was resolved), `status` is the HTTP status code for `http` errors and null otherwise. Error kinds: `http`, `url`, `io`, `auth`, `config`, `no_datasource`, `ambiguous_datasource`.
+The `error` object always has the four keys `profile`, `kind`, `status`, `message`. `profile` names the failing profile (null when none was resolved), `status` is the HTTP status code for `http` and `response` errors and null otherwise. Error kinds: `http`, `response`, `url`, `io`, `auth`, `config`, `no_datasource`, `ambiguous_datasource`.
 
-For `http` errors, `message` is the upstream's own error text: the JSON `message` field (Grafana), else the JSON `error` field (Prometheus, Loki), else the response body as plain text (Loki and Tempo answer many errors in plain text), trimmed and cut to 500 characters. It is null only when the error response has an empty body. A request that gets no complete reply is an `io` error whose `message` names the request path followed by the chain of causes, so a refused connection, a DNS failure and an untrusted TLS certificate read differently.
+Where `message` comes from for the kinds that talk to the instance:
+
+- `http`: a non-2xx reply. `message` is the upstream's own error text: the JSON `message` field (Grafana), else the JSON `error` field (Prometheus, Loki), else the response body as plain text (Loki and Tempo answer many errors in plain text), trimmed and cut to 500 characters. It is null only when the error response has an empty body.
+- `response`: a success status whose body gcli cannot use, either not JSON (an SSO proxy's HTML login page, say) or JSON of an unexpected shape. `status` is that reply's status; `message` says what was wrong, names the request path and content type, and quotes the start of the body.
+- `io`: a request that got no complete reply. `message` names the request path followed by the chain of causes, so a refused connection, a DNS failure and an untrusted TLS certificate read differently.
 
 Exit codes:
 
 | Code | Meaning                                                                                                       |
 | ---- | ------------------------------------------------------------------------------------------------------------- |
 | 0    | Success. Also used when a multi-profile run had at least one success.                                         |
-| 1    | HTTP error, invalid URL, I/O error. Also: a multi-profile run where all failed.                               |
+| 1    | HTTP error, malformed response, invalid URL, I/O error. Also: a multi-profile run where all failed.           |
 | 2    | Config, auth or datasource resolution error (unknown profile, ambiguous datasource, bad time arguments, ...). |
 
 A 401 while using token or basic auth fails fast with `kind: "http"`, `status: 401`. OAuth profiles retry once with a fresh token first.
@@ -404,8 +408,8 @@ This CLI is designed to be driven by tools like you. The guarantees:
 
 - **Non-interactive.** It never prompts, never pages, never animates. If information is missing it fails immediately with a structured error.
 - **Stable stdout.** Data goes to stdout only. JSON mode is line-oriented: one JSON value or one JSONL record per line, safe for `jq` and streaming parsers.
-- **Stable error contract.** All errors are one JSON line on stderr with the fixed keys `profile`, `kind`, `status`, `message`. For `http` errors, `message` carries the upstream's own error text (a LogQL, PromQL or TraceQL parse error, say); it is null only when the response body was empty.
-- **Meaningful exit codes.** 0 ok (including partial multi-profile success), 1 transport failure, 2 bad invocation (config/auth/datasource).
+- **Stable error contract.** All errors are one JSON line on stderr with the fixed keys `profile`, `kind`, `status`, `message`. For `http` errors, `message` carries the upstream's own error text (a LogQL, PromQL or TraceQL parse error, say); it is null only when the response body was empty. `kind: "response"` means the instance answered with a success status but a body that is not the expected JSON (an SSO login page, for example); its `message` quotes the start of that body.
+- **Meaningful exit codes.** 0 ok (including partial multi-profile success), 1 upstream or transport failure (`http`, `response`, `io`, `url`), 2 bad invocation (config/auth/datasource).
 - **Auto JSON.** Piping the output selects JSON mode without extra flags, but prefer explicit `--output json` for determinism.
 
 Suggested discovery workflow, from unknown instance to first result:

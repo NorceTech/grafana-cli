@@ -1,6 +1,6 @@
-use crate::Result;
-use crate::client::GrafanaClient;
+use crate::client::{GrafanaClient, Reply};
 use crate::output::{LogRecord, OutputMode};
+use crate::{Error, Result};
 use serde_json::Value;
 
 pub mod datasources;
@@ -32,6 +32,18 @@ pub struct QueryWindow {
     pub to: Option<String>,
     #[arg(long)]
     pub datasource: Option<String>,
+}
+
+/// `data` of a reply in the envelope Prometheus and Loki share,
+/// `{"status": "success" | "error", "data": ..., "error": ...}`. A
+/// `"status": "error"` reply is the upstream's own error (kind `http`), any
+/// other status a malformed reply; `None` is a success without `data`.
+fn success_data(reply: &Reply) -> Result<Option<&Value>> {
+    match reply.body.get("status").and_then(Value::as_str) {
+        Some("success") => Ok(reply.body.get("data")),
+        Some("error") => Err(Error::http(reply.meta.status, reply.body.to_string())),
+        _ => Err(reply.malformed("no \"status\": \"success\" or \"error\"")),
+    }
 }
 
 // The subcommands that run once per selected profile; the bin flattens them
