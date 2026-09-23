@@ -6,14 +6,14 @@ One module per command family; each owns its clap types and turns Grafana dataso
 
 ## WHERE TO LOOK
 
-| Task                                                             | File                          | Notes                                                                                   |
-| ---------------------------------------------------------------- | ----------------------------- | --------------------------------------------------------------------------------------- |
-| Output enum, fanout subcommands, shared window args, stub guards | `mod.rs`                      | `CommandOutput`, `Query` + `Query::run`, `QueryWindow`, `*_are_implemented`             |
-| Loki: `search`, `labels`, `label_values`                         | `logs.rs`                     | `loki_context` resolves window + datasource once                                        |
-| Prometheus: `instant`, `range`                                   | `metrics.rs`                  | `prom_result` guards the envelope, `flatten_matrix`                                     |
-| Tempo: `get`, `search`                                           | `traces.rs`                   | `get` returns `Raw` OTLP; table = row per span                                          |
-| `health`, `datasources`                                          | `health.rs`, `datasources.rs` | no datasource resolution                                                                |
-| Profile add/list/use/remove/set-token                            | `profile.rs`                  | sync, works on `Config`, never fans out; `app.rs::profile_command` matches `ProfileCmd` |
+| Task                                                | File                          | Notes                                                                                   |
+| --------------------------------------------------- | ----------------------------- | --------------------------------------------------------------------------------------- |
+| Output enum, fanout subcommands, shared window args | `mod.rs`                      | `CommandOutput`, `Query` + `Query::run`, `QueryWindow`                                  |
+| Loki: `search`, `labels`, `label_values`            | `logs.rs`                     | `loki_context` resolves window + datasource once                                        |
+| Prometheus: `instant`, `range`                      | `metrics.rs`                  | `prom_result` guards the envelope, `flatten_matrix`                                     |
+| Tempo: `get`, `search`                              | `traces.rs`                   | `get` returns `Raw` OTLP; table = row per span                                          |
+| `health`, `datasources`                             | `health.rs`, `datasources.rs` | no datasource resolution                                                                |
+| Profile add/list/use/remove/set-token               | `profile.rs`                  | sync, works on `Config`, never fans out; `app.rs::profile_command` matches `ProfileCmd` |
 
 ## CONTRACT
 
@@ -40,11 +40,9 @@ One module per command family; each owns its clap types and turns Grafana dataso
 1. `#[derive(clap::Args)]` struct and function here per the contract; `#[command(flatten)]` a `QueryWindow` for time-windowed queries. `//` comments only on clap-derived items: `///` becomes help text.
 2. Variant in the family's `*Cmd` enum plus its arm in that enum's `run`. A new family also needs `pub mod`, a `Query` variant and a `Query::run` arm in `mod.rs`.
 3. No bin change: `Commands` flattens `Query`. Only commands that must not fan out (like `profile`, `completions`) get a variant in `src/cli.rs` and an arm in `src/app.rs::run`.
-4. Add the call to `query_commands_are_implemented` (or the profile twin) in `mod.rs`.
-5. Unit tests for pure reshaping in the module; a wiremock scenario in `tests/`.
+4. Unit tests for pure reshaping in the module; a wiremock scenario in `tests/`.
 
 ## ANTI-PATTERNS
 
-- Never ship a command returning `Error::Unimplemented`: the `mod.rs` guard tests fail on it, and exit code 3 is reserved for stubs.
 - An explicit `--datasource` matches uid or name with NO type check (`src/datasource.rs:28`); don't count on it to reject a wrong-type datasource.
 - No per-command HTTP or auth handling: `GrafanaClient::get_json` owns bearer/basic/OAuth headers, the single OAuth 401 retry and Grafana `message` extraction.

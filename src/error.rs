@@ -16,8 +16,6 @@ pub enum Error {
     Auth { kind: String, message: String },
     #[error("config error: {message}")]
     Config { message: String },
-    #[error("not implemented")]
-    Unimplemented,
     #[error("no datasource of type {wanted_type}; available: {}", candidates.join(", "))]
     NoDatasource {
         wanted_type: String,
@@ -39,7 +37,6 @@ pub fn emit_json_error(profile: Option<&str>, err: &Error) -> String {
         Error::Io(_) => ("io", None, Some(err.to_string())),
         Error::Auth { .. } => ("auth", None, Some(err.to_string())),
         Error::Config { .. } => ("config", None, Some(err.to_string())),
-        Error::Unimplemented => ("unimplemented", None, Some(err.to_string())),
         Error::NoDatasource { .. } => ("no_datasource", None, Some(err.to_string())),
         Error::AmbiguousDatasource { .. } => ("ambiguous_datasource", None, Some(err.to_string())),
     };
@@ -59,7 +56,6 @@ pub fn exit_code(err: &Error) -> i32 {
         Error::Http { .. } | Error::Url(_) | Error::Io(_) => 1,
         Error::Auth { .. } | Error::Config { .. } => 2,
         Error::NoDatasource { .. } | Error::AmbiguousDatasource { .. } => 2,
-        Error::Unimplemented => 3,
     }
 }
 
@@ -98,7 +94,6 @@ mod tests {
     #[test]
     fn json_error_shape_is_exact() {
         for e in [
-            Error::Unimplemented,
             Error::Url("x".into()),
             Error::Io(std::io::Error::other("io")),
             Error::Auth {
@@ -164,7 +159,6 @@ mod tests {
             }),
             "config"
         );
-        assert_eq!(kind(&Error::Unimplemented), "unimplemented");
         assert_eq!(
             kind(&Error::NoDatasource {
                 wanted_type: "t".into(),
@@ -205,6 +199,5 @@ mod tests {
             }),
             2
         );
-        assert_eq!(exit_code(&Error::Unimplemented), 3);
     }
 }

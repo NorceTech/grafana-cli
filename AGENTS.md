@@ -65,7 +65,7 @@ Refs = ast-grep AST-node references across `src/` and `tests/`, definition exclu
 | `Query`                        | enum   | `src/commands/mod.rs:40` | 18   | clap subcommands that fan out; `Query::run` delegates to each family's `run`         |
 | `QueryWindow`                  | struct | `src/commands/mod.rs:26` | 15   | clap `Args`: window + `--datasource`, flattened into query subcommands               |
 | `resolve_profiles`             | fn     | `src/fanout.rs:8`        | 9    | decides which profiles run                                                           |
-| `emit_json_error`, `exit_code` | fn     | `src/error.rs:33`, `:57` | 9, 9 | the error contract                                                                   |
+| `emit_json_error`, `exit_code` | fn     | `src/error.rs:31`, `:54` | 9, 9 | the error contract                                                                   |
 | `dispatch`                     | fn     | `src/app.rs:39`          | 1    | config -> profiles -> overrides -> auth -> client -> `Query::run` (fanout) -> render |
 
 ## CONVENTIONS

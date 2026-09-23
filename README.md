@@ -350,7 +350,7 @@ Every error is a single JSON line on stderr:
 {"error":{"kind":"config","message":"config error: profile 'missing' not found; available: (none)","profile":"missing","status":null}}
 ```
 
-The `error` object always has the four keys `profile`, `kind`, `status`, `message`. `profile` names the failing profile (null when none was resolved), `status` is the HTTP status code for `http` errors and null otherwise. Error kinds: `http`, `url`, `io`, `auth`, `config`, `no_datasource`, `ambiguous_datasource`, `unimplemented`.
+The `error` object always has the four keys `profile`, `kind`, `status`, `message`. `profile` names the failing profile (null when none was resolved), `status` is the HTTP status code for `http` errors and null otherwise. Error kinds: `http`, `url`, `io`, `auth`, `config`, `no_datasource`, `ambiguous_datasource`.
 
 Exit codes:
 
@@ -359,7 +359,6 @@ Exit codes:
 | 0    | Success. Also used when a multi-profile run had at least one success.                                         |
 | 1    | HTTP error, invalid URL, I/O error. Also: a multi-profile run where all failed.                               |
 | 2    | Config, auth or datasource resolution error (unknown profile, ambiguous datasource, bad time arguments, ...). |
-| 3    | Unimplemented.                                                                                                |
 
 A 401 while using token or basic auth fails fast with `kind: "http"`, `status: 401`. OAuth profiles retry once with a fresh token first.
 
@@ -404,7 +403,7 @@ This CLI is designed to be driven by tools like you. The guarantees:
 - **Non-interactive.** It never prompts, never pages, never animates. If information is missing it fails immediately with a structured error.
 - **Stable stdout.** Data goes to stdout only. JSON mode is line-oriented: one JSON value or one JSONL record per line, safe for `jq` and streaming parsers.
 - **Stable error contract.** All errors are one JSON line on stderr with the fixed keys `profile`, `kind`, `status`, `message`.
-- **Meaningful exit codes.** 0 ok (including partial multi-profile success), 1 transport failure, 2 bad invocation (config/auth/datasource), 3 unimplemented.
+- **Meaningful exit codes.** 0 ok (including partial multi-profile success), 1 transport failure, 2 bad invocation (config/auth/datasource).
 - **Auto JSON.** Piping the output selects JSON mode without extra flags, but prefer explicit `--output json` for determinism.
 
 Suggested discovery workflow, from unknown instance to first result:
