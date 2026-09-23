@@ -352,7 +352,7 @@ Every error is a single JSON line on stderr:
 
 The `error` object always has the four keys `profile`, `kind`, `status`, `message`. `profile` names the failing profile (null when none was resolved), `status` is the HTTP status code for `http` errors and null otherwise. Error kinds: `http`, `url`, `io`, `auth`, `config`, `no_datasource`, `ambiguous_datasource`.
 
-For `http` errors, `message` is the upstream's own error text: the JSON `message` field (Grafana), else the JSON `error` field (Prometheus, Loki), else the response body as plain text (Loki and Tempo answer many errors in plain text), trimmed and cut to 500 characters. It is null only when the error response has an empty body.
+For `http` errors, `message` is the upstream's own error text: the JSON `message` field (Grafana), else the JSON `error` field (Prometheus, Loki), else the response body as plain text (Loki and Tempo answer many errors in plain text), trimmed and cut to 500 characters. It is null only when the error response has an empty body. A request that gets no complete reply is an `io` error whose `message` names the request path followed by the chain of causes, so a refused connection, a DNS failure and an untrusted TLS certificate read differently.
 
 Exit codes:
 

@@ -252,6 +252,20 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn refused_connection_is_named_in_the_message() {
+        let err = client("http://127.0.0.1:1", AuthProvider::Token("t".into()))
+            .health()
+            .await
+            .unwrap_err();
+
+        // reqwest's own text ("error sending request for url ...") is the same
+        // for a refusal, a DNS failure and a bad certificate; the OS error at
+        // the end of the source chain tells them apart.
+        let message = err.to_string();
+        assert!(message.contains("Connection refused"), "{message}");
+    }
+
+    #[tokio::test]
     async fn token_auth_401_fails_fast() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))

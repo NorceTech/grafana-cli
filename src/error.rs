@@ -14,7 +14,7 @@ pub enum Error {
     Io(#[from] std::io::Error),
     // The request never got a complete reply (connect, TLS, body read);
     // `source` keeps reqwest's error so callers can ask `is_timeout()`.
-    #[error("request {path}: {source}")]
+    #[error("request {path}: {}", with_causes(source))]
     Transport {
         path: String,
         source: reqwest::Error,
@@ -61,6 +61,16 @@ impl Error {
             message,
         }
     }
+}
+
+/// `err` and its `source()` chain joined by ": ". reqwest's own text is the
+/// same for a refused connection, a DNS failure and an untrusted certificate;
+/// the causes beneath it tell them apart.
+fn with_causes(err: &dyn std::error::Error) -> String {
+    std::iter::successors(Some(err), |e| e.source())
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(": ")
 }
 
 /// `text` cut to at most `max` chars; the cut never splits a char.
@@ -181,6 +191,25 @@ mod tests {
             path: "/api/health".into(),
             source,
         }
+    }
+
+    #[test]
+    fn transport_message_names_the_nested_cause() {
+        let e = transport();
+        let Error::Transport { source, .. } = &e else {
+            unreachable!()
+        };
+        // reqwest's own text is just "builder error"; the URL parse error
+        // beneath it says what went wrong.
+        let cause = std::error::Error::source(source).expect("fixture has a cause");
+
+        assert!(
+            json_message(&e)
+                .as_str()
+                .unwrap()
+                .contains(&cause.to_string()),
+            "{e}"
+        );
     }
 
     #[test]
