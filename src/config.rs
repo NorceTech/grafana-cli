@@ -341,6 +341,23 @@ mod tests {
         assert_eq!(Config::load_from(&path).unwrap(), sample_config());
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn save_to_creates_missing_directories_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let config_dir = dir.path().join("a").join("b");
+
+        sample_config()
+            .save_to(&config_dir.join("config.toml"))
+            .unwrap();
+
+        for created in [dir.path().join("a"), config_dir] {
+            let mode = std::fs::metadata(&created).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o700, "{} is {mode:o}", created.display());
+        }
+    }
+
     #[test]
     fn remove_use_set_token_ops() {
         let mut c = sample_config();

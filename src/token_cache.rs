@@ -98,4 +98,25 @@ mod tests {
             .collect();
         assert_eq!(names, ["tokens.json"], "temp file left behind");
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn store_creates_the_cache_directory_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let cache_dir = dir.path().join("cache");
+
+        store(
+            &cache_dir.join("tokens.json"),
+            "p:cid",
+            CacheEntry {
+                token: "t".into(),
+                expires_at_unix: 9,
+            },
+        )
+        .unwrap();
+
+        let mode = std::fs::metadata(&cache_dir).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o700, "cache dir is {mode:o}");
+    }
 }

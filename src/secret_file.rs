@@ -1,12 +1,12 @@
 use crate::Result;
-use std::fs::OpenOptions;
+use std::fs::{DirBuilder, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[cfg(unix)]
-use std::os::unix::fs::OpenOptionsExt;
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 
 /// Replaces `path` with `bytes` atomically, readable only by the owner. The
 /// only way `config.toml` and `tokens.json` are written.
@@ -14,11 +14,15 @@ use std::os::unix::fs::OpenOptionsExt;
 /// The bytes go to a fresh sibling temp file created with mode 0600 (unix),
 /// which is fsynced and renamed over `path`: readers see the old or the new
 /// file, never a partial one, and the secret never exists under a wider mode.
-/// Missing parent directories are created. The temp file is removed when the
-/// write or the rename fails.
+/// Missing parent directories are created 0700 (unix); existing ones keep
+/// their mode. The temp file is removed when the write or the rename fails.
 pub(crate) fn write_secret(path: &Path, bytes: &[u8]) -> Result<()> {
     if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
+        let mut builder = DirBuilder::new();
+        builder.recursive(true);
+        #[cfg(unix)]
+        builder.mode(0o700);
+        builder.create(dir)?;
     }
     let temp = temp_sibling(path);
     let mut options = OpenOptions::new();
