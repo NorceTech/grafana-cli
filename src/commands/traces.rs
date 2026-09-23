@@ -74,7 +74,8 @@ pub async fn get(
     let ds = resolve_ds(client, args.datasource.as_deref()).await?;
     let value = client
         .proxy_request(&ds.uid, &format!("api/traces/{}", args.trace_id), &[])
-        .await?;
+        .await?
+        .body;
     if mode == OutputMode::Table {
         if let Some(rows) = span_rows(&value) {
             return Ok(CommandOutput::Table {
@@ -156,7 +157,10 @@ pub async fn search(
         ("end", end_secs.to_string()),
         ("limit", args.limit.to_string()),
     ];
-    let body = client.proxy_request(&ds.uid, "api/search", &pairs).await?;
+    let body = client
+        .proxy_request(&ds.uid, "api/search", &pairs)
+        .await?
+        .body;
     let traces = body
         .get("traces")
         .and_then(Value::as_array)

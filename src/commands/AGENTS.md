@@ -28,7 +28,7 @@ One module per command family; each owns its clap types and turns Grafana dataso
 
 ## CONVENTIONS
 
-- Deterministic output: logs sort by (ns timestamp, line), never by the ms-truncated `ts` string (`logs.rs:124`); range series sort by `label_string` (sorted keys), samples by ts.
+- Deterministic output: logs sort by (ns timestamp, line), never by the ms-truncated `ts` string (`logs.rs:141`); range series sort by `label_string` (sorted keys), samples by ts.
 - Field names are README contracts: metrics `{metric, value, ts}` with values kept as upstream strings; traces search `{traceID, rootServiceName, rootTraceName, durationMs, start}`; datasources `{name, type, uid, url, isDefault}`.
 - Errors: Loki shape errors are `Error::Http { status: 200, message: "loki response parse: ..." }` (`logs.rs:69`); a Prometheus `status != "success"` is `Error::Http` carrying the upstream `error`; missing `data`, wrong `resultType` and bad `--at`/`--step` input are `Error::Config` (exit 2).
 - Typed until the wire: datasource types are `datasource::Kind` and Loki's direction is `logs::Direction`; each becomes a string only via its `as_str()` where the request or the type filter is built.

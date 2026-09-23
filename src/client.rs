@@ -1,5 +1,6 @@
 use crate::auth::{self, AuthProvider};
 use crate::{Error, Result};
+use reqwest::header::CONTENT_TYPE;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -12,6 +13,21 @@ pub struct Datasource {
     pub url: String,
     #[serde(rename = "isDefault")]
     pub is_default: bool,
+}
+
+/// Where a 2xx reply came from: what an error about its body names.
+#[derive(Debug, Clone)]
+pub struct ReplyMeta {
+    pub path: String,
+    pub status: u16,
+    pub content_type: Option<String>,
+}
+
+/// A 2xx reply whose body parsed as JSON.
+#[derive(Debug)]
+pub struct Reply {
+    pub meta: ReplyMeta,
+    pub body: Value,
 }
 
 pub struct GrafanaClient {
@@ -30,11 +46,11 @@ impl GrafanaClient {
     }
 
     pub async fn health(&self) -> Result<Value> {
-        self.get_json("/api/health", &[]).await
+        Ok(self.get_json("/api/health", &[]).await?.body)
     }
 
     pub async fn datasources(&self) -> Result<Vec<Datasource>> {
-        let value = self.get_json("/api/datasources", &[]).await?;
+        let value = self.get_json("/api/datasources", &[]).await?.body;
         serde_json::from_value(value).map_err(|e| Error::Http {
             status: 200,
             body: String::new(),
@@ -47,7 +63,7 @@ impl GrafanaClient {
         uid: &str,
         path: &str,
         query_pairs: &[(&str, String)],
-    ) -> Result<Value> {
+    ) -> Result<Reply> {
         self.get_json(
             &format!("/api/datasources/proxy/uid/{uid}/{path}"),
             query_pairs,
@@ -66,7 +82,7 @@ impl GrafanaClient {
         }
     }
 
-    async fn get_json(&self, path: &str, query_pairs: &[(&str, String)]) -> Result<Value> {
+    async fn get_json(&self, path: &str, query_pairs: &[(&str, String)]) -> Result<Reply> {
         let url = format!("{}{path}", self.base_url);
         let mut oauth_attempt = 0;
         loop {
@@ -77,16 +93,28 @@ impl GrafanaClient {
                 .await
                 .map_err(|source| transport(path, source))?;
             let status = response.status();
+            let content_type = response
+                .headers()
+                .get(CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_string);
             let body = response
                 .text()
                 .await
                 .map_err(|source| transport(path, source))?;
             if status.is_success() {
-                return serde_json::from_str(&body).map_err(|e| Error::Http {
+                let meta = ReplyMeta {
+                    path: path.to_string(),
                     status: status.as_u16(),
-                    body: body.clone(),
-                    message: Some(format!("invalid JSON: {e}")),
-                });
+                    content_type,
+                };
+                return serde_json::from_str(&body)
+                    .map(|json| Reply { meta, body: json })
+                    .map_err(|e| Error::Http {
+                        status: status.as_u16(),
+                        body: body.clone(),
+                        message: Some(format!("invalid JSON: {e}")),
+                    });
             }
             if status.as_u16() == 401
                 && oauth_attempt == 0
@@ -386,7 +414,7 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(out["status"], "success");
+        assert_eq!(out.body["status"], "success");
         server.verify().await;
     }
 }

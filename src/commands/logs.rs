@@ -1,4 +1,4 @@
-use crate::client::{Datasource, GrafanaClient};
+use crate::client::{Datasource, GrafanaClient, Reply};
 use crate::commands::{CommandOutput, QueryWindow};
 use crate::datasource::{self, Kind};
 use crate::output::{LogRecord, OutputMode};
@@ -103,7 +103,7 @@ pub async fn search(
     args: &SearchArgs,
 ) -> Result<CommandOutput> {
     let (start, end, ds) = loki_context(client, &args.window).await?;
-    let value = client
+    let reply = client
         .proxy_request(
             &ds.uid,
             "loki/api/v1/query_range",
@@ -116,7 +116,24 @@ pub async fn search(
             ],
         )
         .await?;
-    let streams = value
+    let records = log_records(&reply, profile, &ds.name)?;
+    if mode == OutputMode::Table {
+        let rows = records
+            .iter()
+            .map(|r| vec![r.ts.clone(), r.line.clone(), labels_kv(&r.labels)])
+            .collect();
+        return Ok(CommandOutput::Table {
+            headers: ["ts", "line", "labels"].map(String::from).to_vec(),
+            rows,
+        });
+    }
+    Ok(CommandOutput::Logs(records))
+}
+
+/// The records of a `query_range` reply for `profile` and `datasource`.
+fn log_records(reply: &Reply, profile: &str, datasource: &str) -> Result<Vec<LogRecord>> {
+    let streams = reply
+        .body
         .pointer("/data/result")
         .and_then(Value::as_array)
         .ok_or_else(|| parse_error("missing data.result array"))?;
@@ -149,7 +166,7 @@ pub async fn search(
                 ns,
                 LogRecord {
                     profile: profile.to_string(),
-                    datasource: ds.name.clone(),
+                    datasource: datasource.to_string(),
                     ts: DateTime::from_timestamp_nanos(ns)
                         .to_rfc3339_opts(SecondsFormat::Millis, true),
                     labels: labels.clone(),
@@ -159,18 +176,7 @@ pub async fn search(
         }
     }
     records.sort_by(|a, b| (a.0, a.1.line.as_str()).cmp(&(b.0, b.1.line.as_str())));
-    let records: Vec<LogRecord> = records.into_iter().map(|(_, r)| r).collect();
-    if mode == OutputMode::Table {
-        let rows = records
-            .iter()
-            .map(|r| vec![r.ts.clone(), r.line.clone(), labels_kv(&r.labels)])
-            .collect();
-        return Ok(CommandOutput::Table {
-            headers: ["ts", "line", "labels"].map(String::from).to_vec(),
-            rows,
-        });
-    }
-    Ok(CommandOutput::Logs(records))
+    Ok(records.into_iter().map(|(_, r)| r).collect())
 }
 
 fn labels_kv(labels: &BTreeMap<String, String>) -> String {
@@ -191,7 +197,7 @@ pub async fn labels(
     window: &QueryWindow,
 ) -> Result<CommandOutput> {
     let (start, end, ds) = loki_context(client, window).await?;
-    let value = client
+    let reply = client
         .proxy_request(
             &ds.uid,
             "loki/api/v1/labels",
@@ -199,7 +205,7 @@ pub async fn labels(
         )
         .await?;
     Ok(CommandOutput::Json(json_string_array(string_array(
-        &value,
+        &reply.body,
     )?)))
 }
 
@@ -210,7 +216,7 @@ pub async fn label_values(
     window: &QueryWindow,
 ) -> Result<CommandOutput> {
     let (start, end, ds) = loki_context(client, window).await?;
-    let value = client
+    let reply = client
         .proxy_request(
             &ds.uid,
             &format!("loki/api/v1/label/{label}/values"),
@@ -218,6 +224,6 @@ pub async fn label_values(
         )
         .await?;
     Ok(CommandOutput::Json(json_string_array(string_array(
-        &value,
+        &reply.body,
     )?)))
 }

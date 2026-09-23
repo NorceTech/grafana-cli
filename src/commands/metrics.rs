@@ -125,10 +125,10 @@ pub async fn instant(
             .with_timezone(&Utc);
         pairs.push(("time", format!("{}", to_epoch_secs(dt))));
     }
-    let body = client
+    let reply = client
         .proxy_request(&ds.uid, "api/v1/query", &pairs)
         .await?;
-    let result = prom_result(body, "vector")?;
+    let result = prom_result(reply.body, "vector")?;
     let mut records = Vec::new();
     for item in &result {
         let Some(pair) = item.get("value").and_then(Value::as_array) else {
@@ -236,10 +236,10 @@ pub async fn range(
         ("end", format!("{}", to_epoch_secs(end))),
         ("step", step_secs.to_string()),
     ];
-    let body = client
+    let reply = client
         .proxy_request(&ds.uid, "api/v1/query_range", &pairs)
         .await?;
-    let result = prom_result(body, "matrix")?;
+    let result = prom_result(reply.body, "matrix")?;
     let (records, rows) = flatten_matrix(&result);
     if mode == OutputMode::Table {
         return Ok(table(["metric", "timestamp", "value"], rows));
