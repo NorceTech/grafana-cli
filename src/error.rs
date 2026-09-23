@@ -12,6 +12,13 @@ pub enum Error {
     Url(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    // The request never got a complete reply (connect, TLS, body read);
+    // `source` keeps reqwest's error so callers can ask `is_timeout()`.
+    #[error("request {path}: {source}")]
+    Transport {
+        path: String,
+        source: reqwest::Error,
+    },
     #[error("auth error ({kind}): {message}")]
     Auth { kind: String, message: String },
     #[error("config error: {message}")]
@@ -69,7 +76,7 @@ pub fn emit_json_error(profile: Option<&str>, err: &Error) -> String {
             status, message, ..
         } => ("http", Some(*status), message.clone()),
         Error::Url(_) => ("url", None, Some(err.to_string())),
-        Error::Io(_) => ("io", None, Some(err.to_string())),
+        Error::Io(_) | Error::Transport { .. } => ("io", None, Some(err.to_string())),
         Error::Auth { .. } => ("auth", None, Some(err.to_string())),
         Error::Config { .. } => ("config", None, Some(err.to_string())),
         Error::NoDatasource { .. } => ("no_datasource", None, Some(err.to_string())),
@@ -88,7 +95,7 @@ pub fn emit_json_error(profile: Option<&str>, err: &Error) -> String {
 
 pub fn exit_code(err: &Error) -> i32 {
     match err {
-        Error::Http { .. } | Error::Url(_) | Error::Io(_) => 1,
+        Error::Http { .. } | Error::Url(_) | Error::Io(_) | Error::Transport { .. } => 1,
         Error::Auth { .. } | Error::Config { .. } => 2,
         Error::NoDatasource { .. } | Error::AmbiguousDatasource { .. } => 2,
     }
@@ -167,9 +174,19 @@ mod tests {
         assert_eq!(json_message(&e), "\u{e9}".repeat(500));
     }
 
+    fn transport() -> Error {
+        // An unparsable URL makes reqwest's builder fail without any I/O.
+        let source = reqwest::Client::new().get("http://").build().unwrap_err();
+        Error::Transport {
+            path: "/api/health".into(),
+            source,
+        }
+    }
+
     #[test]
     fn json_error_shape_is_exact() {
         for e in [
+            transport(),
             Error::Url("x".into()),
             Error::Io(std::io::Error::other("io")),
             Error::Auth {
@@ -222,6 +239,7 @@ mod tests {
         );
         assert_eq!(kind(&Error::Url("u".into())), "url");
         assert_eq!(kind(&Error::Io(std::io::Error::other("e"))), "io");
+        assert_eq!(kind(&transport()), "io");
         assert_eq!(
             kind(&Error::Auth {
                 kind: "k".into(),
@@ -262,6 +280,7 @@ mod tests {
             1
         );
         assert_eq!(exit_code(&Error::Io(std::io::Error::other("e"))), 1);
+        assert_eq!(exit_code(&transport()), 1);
         assert_eq!(
             exit_code(&Error::Auth {
                 kind: "k".into(),

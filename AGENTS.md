@@ -65,7 +65,7 @@ Refs = ast-grep AST-node references across `src/` and `tests/`, definition exclu
 | `Query`                        | enum   | `src/commands/mod.rs:40` | 18   | clap subcommands that fan out; `Query::run` delegates to each family's `run`         |
 | `QueryWindow`                  | struct | `src/commands/mod.rs:26` | 15   | clap `Args`: window + `--datasource`, flattened into query subcommands               |
 | `resolve_profiles`             | fn     | `src/fanout.rs:8`        | 9    | decides which profiles run                                                           |
-| `emit_json_error`, `exit_code` | fn     | `src/error.rs:66`, `:89` | 9, 9 | the error contract                                                                   |
+| `emit_json_error`, `exit_code` | fn     | `src/error.rs:73`, `:96` | 9, 9 | the error contract                                                                   |
 | `dispatch`                     | fn     | `src/app.rs:39`          | 1    | config -> profiles -> overrides -> auth -> client -> `Query::run` (fanout) -> render |
 
 ## CONVENTIONS
@@ -74,7 +74,7 @@ Refs = ast-grep AST-node references across `src/` and `tests/`, definition exclu
 - Clap types live in the lib beside the code that consumes them (`*Cmd` / `*Args` in `commands/`, `QueryWindow`, `datasource::Kind`, `OutputMode`); the bin keeps only `Cli`, `Commands` and `Shell`. Clap-derived items take `//` comments, never `///`: clap turns doc comments into help text.
 - Lib code never prints data: commands return `CommandOutput` and the bin renders it. Diagnostics go to stderr.
 - Fallible lib code returns `crate::Result<T>` with the thiserror `Error`; the variant decides the JSON `kind` and the exit code. `anyhow` is in Cargo.toml but unused; don't introduce it.
-- Bad user input is `Error::Config` (exit 2); transport, HTTP and upstream-parse failures are `Http` / `Io` / `Url` (exit 1).
+- Bad user input is `Error::Config` (exit 2); transport failures are `Transport` (kind `io`, reqwest's error kept as `source`), HTTP and upstream-parse failures `Http`, other I/O `Io`, bad URLs `Url` (all exit 1).
 - Deterministic output: `BTreeMap` for profiles and labels, explicit sorts before rendering.
 - `config.toml` and `tokens.json` are written only through `secret_file::write_secret`: a fresh 0600 sibling temp file, fsynced, then renamed over the target, so the file is never partial and never wider than 0600; missing config and cache directories are created 0700.
 - Unit tests sit in `#[cfg(test)]` modules and never touch process env: `Environment::from_process`, called once in `app::run`, is the only env read, and lib functions take the profile name, overrides and directories as arguments, so tests pass explicit values and tempdir paths.

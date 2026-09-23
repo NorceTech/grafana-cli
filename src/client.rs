@@ -75,12 +75,12 @@ impl GrafanaClient {
                 .await?
                 .send()
                 .await
-                .map_err(|e| Error::Io(std::io::Error::other(format!("request {path}: {e}"))))?;
+                .map_err(|source| transport(path, source))?;
             let status = response.status();
             let body = response
                 .text()
                 .await
-                .map_err(|e| Error::Io(std::io::Error::other(format!("read {path}: {e}"))))?;
+                .map_err(|source| transport(path, source))?;
             if status.is_success() {
                 return serde_json::from_str(&body).map_err(|e| Error::Http {
                     status: status.as_u16(),
@@ -100,6 +100,13 @@ impl GrafanaClient {
             }
             return Err(Error::http(status.as_u16(), body));
         }
+    }
+}
+
+fn transport(path: &str, source: reqwest::Error) -> Error {
+    Error::Transport {
+        path: path.to_string(),
+        source,
     }
 }
 
@@ -228,6 +235,20 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(err, Error::Http { status: 200, .. }), "{err:?}");
+    }
+
+    #[tokio::test]
+    async fn unreachable_server_is_a_transport_error_keeping_its_cause() {
+        // Port 1 is privileged and unused: the connection is refused.
+        let err = client("http://127.0.0.1:1", AuthProvider::Token("t".into()))
+            .health()
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(&err, Error::Transport { path, source } if path == "/api/health" && source.is_connect()),
+            "{err:?}"
+        );
     }
 
     #[tokio::test]
