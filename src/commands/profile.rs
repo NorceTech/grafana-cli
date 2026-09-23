@@ -3,6 +3,7 @@ use crate::commands::CommandOutput;
 use crate::config::{Config, OAuthConfig, Profile};
 use crate::error::Error;
 use crate::output::OutputMode;
+use crate::token_cache;
 use serde_json::{Value, json};
 use std::path::Path;
 
@@ -122,8 +123,16 @@ pub fn use_profile(config: &mut Config, config_path: &Path, name: &str) -> Resul
     ))
 }
 
-pub fn remove(config: &mut Config, config_path: &Path, name: &str) -> Result<CommandOutput> {
+/// Also forgets the profile's cached OAuth tokens (before saving, so a failed
+/// save leaves a profile that merely refetches its token).
+pub fn remove(
+    config: &mut Config,
+    config_path: &Path,
+    cache_path: &Path,
+    name: &str,
+) -> Result<CommandOutput> {
     config.remove_profile(name)?;
+    token_cache::forget_profile(cache_path, name)?;
     config.save_to(config_path)?;
     Ok(CommandOutput::Json(
         json!({"action": "remove", "profile": name}),
@@ -276,7 +285,7 @@ mod tests {
         assert_eq!(config.current_profile.as_deref(), Some("n"));
         set_token(&mut config, &path, "n", "t2").unwrap();
         assert_eq!(config.profiles["n"].token.as_deref(), Some("t2"));
-        remove(&mut config, &path, "n").unwrap();
+        remove(&mut config, &path, &dir.path().join("tokens.json"), "n").unwrap();
         assert!(config.profiles.is_empty());
     }
 }

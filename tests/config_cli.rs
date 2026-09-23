@@ -2,8 +2,11 @@ mod common;
 
 use common::*;
 
-fn config_env(dir: &tempfile::TempDir) -> [(&str, &str); 1] {
-    [("GCLI_CONFIG_DIR", dir.path().to_str().unwrap())]
+// profile remove also forgets cached tokens, so the cache dir points at the
+// tempdir too and no test reaches the real token cache.
+fn config_env(dir: &tempfile::TempDir) -> [(&str, &str); 2] {
+    let dir = dir.path().to_str().unwrap();
+    [("GCLI_CONFIG_DIR", dir), ("GCLI_CACHE_DIR", dir)]
 }
 
 fn load_config(dir: &tempfile::TempDir) -> gcli_lib::Config {

@@ -229,7 +229,10 @@ mod tests {
                 profile::list(&config, crate::output::OutputMode::Json),
             ),
             ("use", profile::use_profile(&mut config, &path, "n")),
-            ("remove", profile::remove(&mut config, &path, "n")),
+            (
+                "remove",
+                profile::remove(&mut config, &path, &dir.path().join("tokens.json"), "n"),
+            ),
             (
                 "set_token",
                 profile::set_token(&mut config, &path, "n", "t"),

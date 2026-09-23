@@ -1,4 +1,4 @@
-use crate::token_cache::{self, CacheEntry};
+use crate::token_cache::{self, CacheEntry, TokenKey};
 use crate::{Error, OAuthConfig, Profile, Result};
 use std::path::{Path, PathBuf};
 
@@ -61,7 +61,7 @@ pub fn from_profile(
 
 pub async fn get_oauth_token(source: &OAuthSource, http: &reqwest::Client) -> Result<String> {
     let config = &source.config;
-    let key = format!("{}:{}", source.profile_name, config.client_id);
+    let key = TokenKey::new(&source.profile_name, config);
     let path = &source.cache_path;
     let now = chrono::Utc::now().timestamp();
     if let Some(token) = token_cache::fresh_token(path, &key, now) {
@@ -123,13 +123,14 @@ pub async fn get_oauth_token(source: &OAuthSource, http: &reqwest::Client) -> Re
     let entry = CacheEntry {
         expires_at_unix: now + expires_in - 60,
         token: token.clone(),
+        key,
     };
-    token_cache::store(path, &key, entry)?;
+    token_cache::store(path, entry)?;
     Ok(token)
 }
 
 pub fn invalidate(source: &OAuthSource) -> Result<()> {
-    let key = format!("{}:{}", source.profile_name, source.config.client_id);
+    let key = TokenKey::new(&source.profile_name, &source.config);
     token_cache::remove(&source.cache_path, &key)
 }
 
@@ -295,13 +296,14 @@ mod tests {
     #[tokio::test]
     async fn oauth_fresh_cache_skips_network() {
         let dir = cache_dir();
-        let expires = chrono::Utc::now().timestamp() + 3000;
-        write_cache_file(
-            dir.path(),
-            &json!({"p:cid": {"token": "cached", "expires_at_unix": expires}}).to_string(),
-        );
         // token_url unroutable: a network fetch would fail the test
         let cfg = oauth_config("http://127.0.0.1:1/token");
+        let cached = CacheEntry {
+            token: "cached".into(),
+            expires_at_unix: chrono::Utc::now().timestamp() + 3000,
+            key: TokenKey::new("p", &cfg),
+        };
+        token_cache::store(&dir.path().join("tokens.json"), cached).unwrap();
         let tok = get_oauth_token(&source(&dir, cfg), &reqwest::Client::new())
             .await
             .unwrap();
@@ -363,12 +365,6 @@ mod tests {
     #[tokio::test]
     async fn oauth_expired_cache_refetches() {
         let dir = cache_dir();
-        let past = chrono::Utc::now().timestamp() - 1000;
-        write_cache_file(
-            dir.path(),
-            &json!({"p:cid": {"token": "stale", "expires_at_unix": past}}).to_string(),
-        );
-
         let server = wiremock::MockServer::start().await;
         wiremock::Mock::given(wiremock::matchers::method("POST"))
             .and(wiremock::matchers::path("/token"))
@@ -378,8 +374,14 @@ mod tests {
             .expect(1)
             .mount(&server)
             .await;
-
         let cfg = oauth_config(&format!("{}/token", server.uri()));
+        let stale = CacheEntry {
+            token: "stale".into(),
+            expires_at_unix: chrono::Utc::now().timestamp() - 1000,
+            key: TokenKey::new("p", &cfg),
+        };
+        token_cache::store(&dir.path().join("tokens.json"), stale).unwrap();
+
         let tok = get_oauth_token(&source(&dir, cfg), &reqwest::Client::new())
             .await
             .unwrap();
@@ -437,18 +439,66 @@ mod tests {
         }
     }
 
+    // Profile "p" caches a token for one set of OAuth settings, then asks with
+    // `change` applied: the token minted for the old settings must not be used.
+    async fn assert_refetched_after(change: impl FnOnce(&mut OAuthConfig)) {
+        let dir = cache_dir();
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({
+                "access_token": "tok", "expires_in": 3600
+            })))
+            .expect(2)
+            .mount(&server)
+            .await;
+        let original = oauth_config(&format!("{}/token", server.uri()));
+        let mut changed = original.clone();
+        change(&mut changed);
+        let http = reqwest::Client::new();
+        get_oauth_token(&source(&dir, original), &http)
+            .await
+            .unwrap();
+
+        get_oauth_token(&source(&dir, changed), &http)
+            .await
+            .unwrap();
+
+        server.verify().await;
+    }
+
+    #[tokio::test]
+    async fn cached_token_is_not_reused_for_another_token_url() {
+        assert_refetched_after(|c| c.token_url = c.token_url.replace("/token", "/other")).await;
+    }
+
+    #[tokio::test]
+    async fn cached_token_is_not_reused_for_another_audience() {
+        assert_refetched_after(|c| c.audience = Some("other".into())).await;
+    }
+
+    #[tokio::test]
+    async fn cached_token_is_not_reused_for_other_scopes() {
+        assert_refetched_after(|c| c.scopes = Some(vec!["a".into()])).await;
+    }
+
+    #[tokio::test]
+    async fn cached_token_is_not_reused_for_another_client_id() {
+        assert_refetched_after(|c| c.client_id = "other".into()).await;
+    }
+
     #[test]
     fn invalidate_removes_only_target_key() {
         let dir = cache_dir();
-        write_cache_file(
-            dir.path(),
-            &json!({
-                "p:cid": {"token": "t", "expires_at_unix": 9},
-                "other:cid": {"token": "t2", "expires_at_unix": 9}
-            })
-            .to_string(),
-        );
-        invalidate(&source(&dir, oauth_config("https://sso/token"))).unwrap();
+        let cfg = oauth_config("https://sso/token");
+        for profile in ["p", "other"] {
+            let entry = CacheEntry {
+                token: "t".into(),
+                expires_at_unix: 9,
+                key: TokenKey::new(profile, &cfg),
+            };
+            token_cache::store(&dir.path().join("tokens.json"), entry).unwrap();
+        }
+        invalidate(&source(&dir, cfg)).unwrap();
         let cache = read_cache_file(dir.path());
         assert!(cache.get("p:cid").is_none());
         assert!(cache.get("other:cid").is_some());

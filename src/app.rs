@@ -6,6 +6,7 @@ use gcli_lib::commands::{self, Query};
 use gcli_lib::config::{Config, config_path};
 use gcli_lib::environment::{Environment, ProfileOverrides};
 use gcli_lib::output::{OutputMode, resolve_output};
+use gcli_lib::token_cache;
 use std::io::IsTerminal;
 use std::sync::Arc;
 
@@ -85,7 +86,11 @@ fn profile_command(cmd: &ProfileCmd, mode: OutputMode, env: &Environment) -> i32
         ProfileCmd::Add { args } => commands::profile::add(&mut config, &path, args),
         ProfileCmd::List => commands::profile::list(&config, mode),
         ProfileCmd::Use { name } => commands::profile::use_profile(&mut config, &path, name),
-        ProfileCmd::Remove { name } => commands::profile::remove(&mut config, &path, name),
+        ProfileCmd::Remove { name } => {
+            token_cache::path(env.cache_dir.as_deref()).and_then(|cache_path| {
+                commands::profile::remove(&mut config, &path, &cache_path, name)
+            })
+        }
         ProfileCmd::SetToken { name, token } => {
             commands::profile::set_token(&mut config, &path, name, token)
         }

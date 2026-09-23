@@ -340,3 +340,49 @@ async fn s15_parallel_oauth_profiles_keep_every_cached_token() {
         &out,
     );
 }
+
+// profile remove forgets the removed profile's cached OAuth token, so a
+// profile re-added under that name starts clean; other profiles keep theirs.
+#[tokio::test]
+async fn s16_profile_remove_forgets_its_cached_oauth_token() {
+    let server = wiremock::MockServer::start().await;
+    token_endpoint_mock("tok", 3600)
+        .expect(2)
+        .mount(&server)
+        .await;
+    health_auth_mock("Bearer tok")
+        .expect(2)
+        .mount(&server)
+        .await;
+    let config = fixture_config(
+        &(oauth_profile_toml("p", &server.uri()) + &oauth_profile_toml("q", &server.uri())),
+    );
+    let cache = tempfile::tempdir().unwrap();
+    let env = envs(&config, &cache);
+    for profile in ["p", "q"] {
+        let out = spawn_gcli(&["--profile", profile, "health"], &env);
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    let out = spawn_gcli(&["profile", "remove", "p"], &env);
+
+    assert!(
+        out.status.success(),
+        "exit={:?} stderr={}",
+        out.status.code(),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let cached = cache_file(&cache);
+    assert!(cached.get("p:cid").is_none(), "{cached}");
+    assert_eq!(cached["q:cid"]["token"], "tok");
+    server.verify().await;
+    write_transcript(
+        "s16_profile_remove_forgets_token.txt",
+        "gcli profile remove p",
+        &out,
+    );
+}
