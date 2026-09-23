@@ -57,16 +57,16 @@ Refs = ast-grep AST-node references across `src/` and `tests/`, definition exclu
 | ------------------------------ | ------ | ------------------------ | ---- | ------------------------------------------------------------------------------------ |
 | `CommandOutput`                | enum   | `src/commands/mod.rs:13` | 64   | every command's result; `render.rs` matches on it                                    |
 | `OutputMode`                   | enum   | `src/output.rs:6`        | 53   | json/table, resolved once in `app::run`                                              |
-| `Config`                       | struct | `src/config.rs:38`       | ~31  | config.toml model; profile CRUD and resolution                                       |
+| `Config`                       | struct | `src/config.rs:39`       | ~31  | config.toml model; profile CRUD and resolution                                       |
 | `GrafanaClient`                | struct | `src/client.rs:17`       | 31   | HTTP facade: `health`, `datasources`, `proxy_request`                                |
-| `AuthProvider`                 | enum   | `src/auth.rs:7`          | 30   | Token / Basic / OAuth, built by `auth::from_profile`                                 |
+| `AuthProvider`                 | enum   | `src/auth.rs:6`          | 30   | Token / Basic / OAuth, built by `auth::from_profile`                                 |
 | `resolve_window`               | fn     | `src/timeutil.rs:4`      | 20   | `--since` / `--from` / `--to` -> UTC bounds                                          |
 | `Datasource`                   | struct | `src/client.rs:7`        | 20   | `/api/datasources` row fed to `datasource::resolve`                                  |
 | `Query`                        | enum   | `src/commands/mod.rs:40` | 18   | clap subcommands that fan out; `Query::run` delegates to each family's `run`         |
 | `QueryWindow`                  | struct | `src/commands/mod.rs:26` | 15   | clap `Args`: window + `--datasource`, flattened into query subcommands               |
 | `resolve_profiles`             | fn     | `src/fanout.rs:8`        | 9    | decides which profiles run                                                           |
 | `emit_json_error`, `exit_code` | fn     | `src/error.rs:33`, `:57` | 9, 9 | the error contract                                                                   |
-| `dispatch`                     | fn     | `src/app.rs:38`          | 1    | config -> profiles -> overrides -> auth -> client -> `Query::run` (fanout) -> render |
+| `dispatch`                     | fn     | `src/app.rs:39`          | 1    | config -> profiles -> overrides -> auth -> client -> `Query::run` (fanout) -> render |
 
 ## CONVENTIONS
 
@@ -110,7 +110,7 @@ nix fmt                      # treefmt: rustfmt + nixfmt + prettier (also the pr
 ## NOTES
 
 - Profile selection: `--profile a,b` (order kept) or `--all-profiles` (sorted; clap makes them conflict), else `GRAFANA_CLI_PROFILE` (one name, no CSV), else `current_profile`.
-- `GRAFANA_CLI_{URL,TOKEN,USERNAME,PASSWORD}` override every selected profile and the `--url/--token/--username/--password` flags win over them: `app::dispatch` calls `fanout::apply_overrides` after `resolve_profiles`, which (like `Config::active_profile`) returns profiles as stored.
+- `GRAFANA_CLI_{URL,TOKEN,USERNAME,PASSWORD}` override the selected profile and the `--url/--token/--username/--password` flags win over them, but only when exactly one profile is selected: with several (`--profile a,b`, `--all-profiles`) any set override is `Error::Config` (exit 2) naming it, so one host never receives every profile's credentials. `app::dispatch` calls `fanout::apply_overrides` after `resolve_profiles`, which (like `Config::active_profile`) returns profiles as stored.
 - clap's `env` feature is enabled but unused: env vars are read by hand, only in `Environment::from_process` (`src/environment.rs`), and do not appear in `--help`.
 - `auth::from_profile` order is oauth > token/token_command > basic, so `--token` cannot turn an OAuth profile into token auth.
 - `*_command` secrets run as `sh -c "<args joined by spaces>"` at request time; a non-zero exit or empty output is an auth error.

@@ -147,6 +147,76 @@ async fn s8d_all_profiles_matches_csv() {
     assert_eq!(lines[1]["data"]["version"], "11.4.0");
 }
 
+// URL and credential overrides name one instance and one identity: with
+// several profiles selected they are a config error naming the override,
+// and no profile's instance is contacted.
+async fn assert_override_rejected(
+    args: &[&str],
+    extra_env: &[(&str, &str)],
+    named: &str,
+) -> std::process::Output {
+    let m1 = MockServer::start().await;
+    let m2 = MockServer::start().await;
+    for server in [&m1, &m2] {
+        health_mock().expect(0).mount(server).await;
+    }
+    let config = fixture_config(&two_profile_toml(&m1.uri(), &m2.uri()));
+    let mut env = vec![("GCLI_CONFIG_DIR", config.path().to_str().unwrap())];
+    env.extend_from_slice(extra_env);
+
+    let out = spawn_gcli(args, &env);
+
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        out.stdout.is_empty(),
+        "{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    let stderr = stderr_lines(&out);
+    assert_eq!(stderr.len(), 1, "one error line: {stderr:?}");
+    assert_eq!(stderr[0]["error"]["kind"], "config");
+    let message = stderr[0]["error"]["message"].as_str().unwrap();
+    assert!(message.contains(named), "{message}");
+    m1.verify().await;
+    m2.verify().await;
+    out
+}
+
+#[tokio::test]
+async fn s17a_csv_profiles_reject_a_flag_override() {
+    let out = assert_override_rejected(
+        &["--profile", "a,b", "--token", "x", "health"],
+        &[],
+        "--token",
+    )
+    .await;
+    write_transcript(
+        "s17a_csv_rejects_flag_override.txt",
+        "gcli --profile a,b --token x health",
+        &out,
+    );
+}
+
+#[tokio::test]
+async fn s17b_all_profiles_reject_an_env_override() {
+    let out = assert_override_rejected(
+        &["--all-profiles", "health"],
+        &[("GRAFANA_CLI_URL", "http://127.0.0.1:1")],
+        "GRAFANA_CLI_URL",
+    )
+    .await;
+    write_transcript(
+        "s17b_all_rejects_env_override.txt",
+        "GRAFANA_CLI_URL=http://127.0.0.1:1 gcli --all-profiles health",
+        &out,
+    );
+}
+
 #[tokio::test]
 async fn s8e_fanout_runs_in_parallel() {
     let m1 = MockServer::start().await;

@@ -37,6 +37,12 @@ pub(crate) async fn run(cli: Cli) -> i32 {
 }
 
 async fn dispatch(cli: &Cli, mode: OutputMode, query: &Query, env: Environment) -> i32 {
+    let flags = ProfileOverrides {
+        url: cli.url.clone(),
+        token: cli.token.clone(),
+        username: cli.username.clone(),
+        password: cli.password.clone(),
+    };
     let selected = config_path(env.config_dir.as_deref())
         .and_then(|path| Config::load_from(&path))
         .and_then(|config| {
@@ -46,18 +52,12 @@ async fn dispatch(cli: &Cli, mode: OutputMode, query: &Query, env: Environment) 
                 &config,
                 env.profile.as_deref(),
             )
-        });
+        })
+        .and_then(|profiles| gcli_lib::fanout::apply_overrides(profiles, env.overrides, flags));
     let profiles = match selected {
         Ok(p) => p,
         Err(e) => return fail(cli.profile.as_deref(), &e),
     };
-    let flags = ProfileOverrides {
-        url: cli.url.clone(),
-        token: cli.token.clone(),
-        username: cli.username.clone(),
-        password: cli.password.clone(),
-    };
-    let profiles = gcli_lib::fanout::apply_overrides(profiles, env.overrides, flags);
     let http = reqwest::Client::new();
     let query = Arc::new(query.clone());
     let cache_dir = env.cache_dir;

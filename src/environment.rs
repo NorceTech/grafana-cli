@@ -38,7 +38,7 @@ impl Environment {
 /// One-shot replacements for a profile's url and credentials, from the
 /// `GRAFANA_CLI_*` variables or the `--url`/`--token`/`--username`/`--password`
 /// flags.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub struct ProfileOverrides {
     pub url: Option<String>,
     pub token: Option<String>,
@@ -56,6 +56,19 @@ impl ProfileOverrides {
             password: self.password.or(profile.password),
             ..profile
         }
+    }
+
+    /// Names of the set fields, in declaration order.
+    pub(crate) fn set_fields(&self) -> Vec<&'static str> {
+        [
+            ("url", &self.url),
+            ("token", &self.token),
+            ("username", &self.username),
+            ("password", &self.password),
+        ]
+        .into_iter()
+        .filter_map(|(name, value)| value.is_some().then_some(name))
+        .collect()
     }
 }
 

@@ -79,7 +79,7 @@ A profile must use exactly one auth mode: `token`/`token_command`, `username` pl
 2. Environment: `GRAFANA_CLI_PROFILE`, `GRAFANA_CLI_URL`, `GRAFANA_CLI_TOKEN`, `GRAFANA_CLI_USERNAME`, `GRAFANA_CLI_PASSWORD`
 3. `current_profile` in `config.toml`
 
-The `GRAFANA_CLI_URL`, `GRAFANA_CLI_TOKEN`, `GRAFANA_CLI_USERNAME` and `GRAFANA_CLI_PASSWORD` variables override the matching fields of whichever profile was selected, which is handy for one-shot runs against a different instance.
+The `GRAFANA_CLI_URL`, `GRAFANA_CLI_TOKEN`, `GRAFANA_CLI_USERNAME` and `GRAFANA_CLI_PASSWORD` variables override the matching fields of the selected profile, which is handy for one-shot runs against a different instance; the `--url`, `--token`, `--username` and `--password` flags override both. These overrides describe one instance and one identity, so they apply only when exactly one profile is selected: when `--profile a,b` or `--all-profiles` selects several, setting any of them fails with a `config` error (exit 2) that names it, instead of sending one profile's credentials to every instance.
 
 **Directories.** `GCLI_CONFIG_DIR` overrides where `config.toml` is read and written. `GCLI_CACHE_DIR` overrides where the OAuth token cache (`tokens.json`) lives; the default is the platform cache directory (`~/.cache/grafana-cli` on Linux, `~/Library/Caches/grafana-cli` on macOS).
 

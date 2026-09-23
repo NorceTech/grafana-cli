@@ -50,16 +50,42 @@ pub fn resolve_profiles(
 }
 
 /// Applies the `GRAFANA_CLI_*` overrides, then the flag overrides on top, to
-/// every selected profile: config file < environment < flags.
+/// the selected profile: config file < environment < flags. Overrides name one
+/// instance and one identity, so with several profiles selected any set
+/// override is a config error naming it, instead of one host receiving every
+/// profile's credentials or one token going to every instance.
 pub fn apply_overrides(
-    profiles: Vec<(String, Profile)>,
+    mut profiles: Vec<(String, Profile)>,
     env: ProfileOverrides,
     flags: ProfileOverrides,
-) -> Vec<(String, Profile)> {
-    profiles
+) -> Result<Vec<(String, Profile)>> {
+    if let [(_, profile)] = profiles.as_mut_slice() {
+        *profile = flags.apply(env.apply(std::mem::take(profile)));
+        return Ok(profiles);
+    }
+    let set: Vec<String> = flags
+        .set_fields()
         .into_iter()
-        .map(|(name, profile)| (name, flags.clone().apply(env.clone().apply(profile))))
-        .collect()
+        .map(|field| format!("--{field}"))
+        .chain(
+            env.set_fields()
+                .into_iter()
+                .map(|field| format!("GRAFANA_CLI_{}", field.to_ascii_uppercase())),
+        )
+        .collect();
+    if set.is_empty() {
+        return Ok(profiles);
+    }
+    let names: Vec<&str> = profiles.iter().map(|(name, _)| name.as_str()).collect();
+    Err(Error::Config {
+        message: format!(
+            "url and credential overrides apply to exactly one profile, but {} are \
+             selected ({}); drop {} or select a single profile",
+            names.len(),
+            names.join(", "),
+            set.join(", ")
+        ),
+    })
 }
 
 pub async fn run<T, F, Fut>(profiles: Vec<(String, Profile)>, f: F) -> Vec<(String, Result<T>)>
@@ -206,22 +232,53 @@ mod tests {
     }
 
     #[test]
-    fn csv_and_all_flags_apply_env_overrides() {
-        let unset = resolve_profiles(Some("c,a"), false, &sample(), None).unwrap();
-        let csv = apply_overrides(unset.clone(), env_overrides(), Default::default());
-        let all = apply_overrides(
-            resolve_profiles(None, true, &sample(), None).unwrap(),
-            env_overrides(),
-            Default::default(),
+    fn env_overrides_with_csv_profiles_are_a_config_error_naming_them() {
+        let selected = resolve_profiles(Some("c,a"), false, &sample(), None).unwrap();
+
+        let err = apply_overrides(selected, env_overrides(), Default::default()).unwrap_err();
+
+        assert!(
+            matches!(&err, Error::Config { message }
+                if message.contains("GRAFANA_CLI_URL, GRAFANA_CLI_TOKEN")
+                    && message.contains("(c, a)")),
+            "{err:?}"
         );
-        // resolved profiles keep their own settings until overrides are applied
-        assert_eq!(unset[0].1.url, "https://c");
-        assert_eq!(unset[1].1.token.as_deref(), Some("t"));
-        assert_eq!(all.len(), 3);
-        for (name, p) in csv.iter().chain(&all) {
-            assert_eq!(p.url, "https://env", "{name}");
-            assert_eq!(p.token.as_deref(), Some("envtok"), "{name}");
-        }
+    }
+
+    #[test]
+    fn flag_override_with_all_profiles_is_a_config_error_naming_it() {
+        let selected = resolve_profiles(None, true, &sample(), None).unwrap();
+        let flags = ProfileOverrides {
+            token: Some("flagtok".into()),
+            ..Default::default()
+        };
+
+        let err = apply_overrides(selected, Default::default(), flags).unwrap_err();
+
+        assert!(
+            matches!(&err, Error::Config { message } if message.contains("--token")),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn several_profiles_without_overrides_are_returned_as_stored() {
+        let selected = resolve_profiles(Some("c,a"), false, &sample(), None).unwrap();
+
+        let got = apply_overrides(selected.clone(), Default::default(), Default::default());
+
+        assert_eq!(got.unwrap(), selected);
+    }
+
+    #[test]
+    fn all_profiles_selecting_a_single_profile_takes_overrides() {
+        let mut config = Config::default();
+        config.add_profile("only", profile("https://only")).unwrap();
+        let selected = resolve_profiles(None, true, &config, None).unwrap();
+
+        let got = apply_overrides(selected, env_overrides(), Default::default()).unwrap();
+
+        assert_eq!(got[0].1.url, "https://env");
     }
 
     #[test]
@@ -232,7 +289,7 @@ mod tests {
             ..Default::default()
         };
 
-        let got = apply_overrides(selected, env_overrides(), flags);
+        let got = apply_overrides(selected, env_overrides(), flags).unwrap();
 
         assert_eq!(got[0].1.url, "https://env");
         assert_eq!(got[0].1.token.as_deref(), Some("flagtok"));
