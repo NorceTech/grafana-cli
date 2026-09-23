@@ -128,9 +128,9 @@ pub async fn get_oauth_token(source: &OAuthSource, http: &reqwest::Client) -> Re
     Ok(token)
 }
 
-pub fn invalidate(source: &OAuthSource) {
+pub fn invalidate(source: &OAuthSource) -> Result<()> {
     let key = format!("{}:{}", source.profile_name, source.config.client_id);
-    token_cache::remove(&source.cache_path, &key);
+    token_cache::remove(&source.cache_path, &key)
 }
 
 pub(crate) fn exec_command(cmd: &[String], kind: &str) -> Result<String> {
@@ -448,7 +448,7 @@ mod tests {
             })
             .to_string(),
         );
-        invalidate(&source(&dir, oauth_config("https://sso/token")));
+        invalidate(&source(&dir, oauth_config("https://sso/token"))).unwrap();
         let cache = read_cache_file(dir.path());
         assert!(cache.get("p:cid").is_none());
         assert!(cache.get("other:cid").is_some());
@@ -457,7 +457,7 @@ mod tests {
     #[test]
     fn invalidate_missing_file_is_noop() {
         let dir = cache_dir();
-        invalidate(&source(&dir, oauth_config("https://sso/token")));
+        invalidate(&source(&dir, oauth_config("https://sso/token"))).unwrap();
         assert!(!dir.path().join("tokens.json").exists());
     }
 

@@ -5,11 +5,14 @@ use serde_json::json;
 use wiremock::Mock;
 
 fn oauth_config_toml(base: &str) -> String {
+    format!("current_profile = \"p\"\n{}", oauth_profile_toml("p", base))
+}
+
+fn oauth_profile_toml(name: &str, base: &str) -> String {
     format!(
-        "current_profile = \"p\"\n\
-         [profiles.p]\n\
+        "[profiles.{name}]\n\
          url = \"{base}\"\n\
-         [profiles.p.oauth]\n\
+         [profiles.{name}.oauth]\n\
          token_url = \"{base}/token\"\n\
          client_id = \"cid\"\n\
          client_secret = \"sec\"\n"
@@ -292,6 +295,48 @@ async fn s14_env_selects_profile_and_overrides_url_and_basic_credentials() {
         "s14_env_profile_and_overrides.txt",
         "GRAFANA_CLI_PROFILE=p GRAFANA_CLI_URL=<mock> GRAFANA_CLI_USERNAME=u \
          GRAFANA_CLI_PASSWORD=p gcli health",
+        &out,
+    );
+}
+
+// --all-profiles fetches every OAuth profile's token in parallel; each
+// profile's store into tokens.json must keep the others' entries.
+#[tokio::test]
+async fn s15_parallel_oauth_profiles_keep_every_cached_token() {
+    let server = wiremock::MockServer::start().await;
+    token_endpoint_mock("tok", 3600)
+        .expect(8)
+        .mount(&server)
+        .await;
+    health_auth_mock("Bearer tok")
+        .expect(8)
+        .mount(&server)
+        .await;
+    let names: Vec<String> = (1..=8).map(|i| format!("p{i}")).collect();
+    let config = fixture_config(
+        &names
+            .iter()
+            .map(|name| oauth_profile_toml(name, &server.uri()))
+            .collect::<String>(),
+    );
+    let cache = tempfile::tempdir().unwrap();
+
+    let out = spawn_gcli(&["--all-profiles", "health"], &envs(&config, &cache));
+
+    assert!(
+        out.status.success(),
+        "exit={:?} stderr={}",
+        out.status.code(),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    server.verify().await;
+    let cached = cache_file(&cache);
+    for name in &names {
+        assert_eq!(cached[format!("{name}:cid")]["token"], "tok", "{name}");
+    }
+    write_transcript(
+        "s15_parallel_oauth_cache.txt",
+        "gcli --all-profiles health (8 oauth profiles)",
         &out,
     );
 }

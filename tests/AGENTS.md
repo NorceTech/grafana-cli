@@ -6,21 +6,21 @@ Black-box integration suite: every test spawns the compiled `gcli` binary agains
 
 ## WHERE TO LOOK
 
-| Scenario                                                                                                             | File                    | IDs               |
-| -------------------------------------------------------------------------------------------------------------------- | ----------------------- | ----------------- |
-| profile add/list/use/set-token/remove, profile errors                                                                | `config_cli.rs`         | s1                |
-| health; datasources (`--type`, table)                                                                                | `health_datasources.rs` | s2, s3            |
-| logs search, labels, label-values                                                                                    | `logs.rs`               | s4, s5            |
-| metrics instant/range, epoch wire format                                                                             | `metrics.rs`            | s6                |
-| traces get/search/404                                                                                                | `traces.rs`             | s7                |
-| multi-profile fanout, exit codes, concurrency                                                                        | `fanout_e2e.rs`         | s8a-e             |
-| basic auth header; OAuth fetch/reuse/expiry/401 retry; env vs flag token override; env profile + url/basic overrides | `auth.rs`               | s9, s10, s13, s14 |
-| output modes, error JSON schema, help/version/completions                                                            | `ux.rs`                 | s11-12            |
-| broken pipe exits 0 (real `bash -c` pipe to `head -c 1`)                                                             | `pipe.rs`               | -                 |
+| Scenario                                                                                                                                                              | File                    | IDs                    |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- | ---------------------- |
+| profile add/list/use/set-token/remove, profile errors                                                                                                                 | `config_cli.rs`         | s1                     |
+| health; datasources (`--type`, table)                                                                                                                                 | `health_datasources.rs` | s2, s3                 |
+| logs search, labels, label-values                                                                                                                                     | `logs.rs`               | s4, s5                 |
+| metrics instant/range, epoch wire format                                                                                                                              | `metrics.rs`            | s6                     |
+| traces get/search/404                                                                                                                                                 | `traces.rs`             | s7                     |
+| multi-profile fanout, exit codes, concurrency                                                                                                                         | `fanout_e2e.rs`         | s8a-e                  |
+| basic auth header; OAuth fetch/reuse/expiry/401 retry; env vs flag token override; env profile + url/basic overrides; parallel OAuth profiles keep every cached token | `auth.rs`               | s9, s10, s13, s14, s15 |
+| output modes, error JSON schema, help/version/completions                                                                                                             | `ux.rs`                 | s11-12                 |
+| broken pipe exits 0 (real `bash -c` pipe to `head -c 1`)                                                                                                              | `pipe.rs`               | -                      |
 
 Shared harness, `common/mod.rs`:
 
-- `spawn_gcli(args, envs)`: runs `CARGO_BIN_EXE_gcli` from the manifest dir after stripping `GCLI_CONFIG_DIR`, `GCLI_CACHE_DIR` and every `GRAFANA_CLI_*` var. Pass `("GCLI_CONFIG_DIR", dir)` through `envs`, plus `GCLI_CACHE_DIR` for OAuth tests (`auth.rs:25`).
+- `spawn_gcli(args, envs)`: runs `CARGO_BIN_EXE_gcli` from the manifest dir after stripping `GCLI_CONFIG_DIR`, `GCLI_CACHE_DIR` and every `GRAFANA_CLI_*` var. Pass `("GCLI_CONFIG_DIR", dir)` through `envs`, plus `GCLI_CACHE_DIR` for OAuth tests (`auth.rs:28`).
 - `fixture_config(toml)`: `TempDir` holding `config.toml`; keep it bound until the spawn returns.
 - Mocks: `health_mock`, `health_auth_mock(authorization)`, `token_endpoint_mock(token, expires_in)` (POST `/token`), `datasources_json(body)` (GET `/api/datasources`).
 - `write_transcript(name, cmd, &out)`, `write_transcript_multi(name, body)`, `transcript_block`: write `qa/transcripts/<name>` with command, stdout, stderr and exit code. `qa/` is gitignored and rewritten by every `cargo test`.

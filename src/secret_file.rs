@@ -1,5 +1,5 @@
 use crate::Result;
-use std::fs::{DirBuilder, OpenOptions};
+use std::fs::{DirBuilder, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -14,22 +14,14 @@ use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 /// The bytes go to a fresh sibling temp file created with mode 0600 (unix),
 /// which is fsynced and renamed over `path`: readers see the old or the new
 /// file, never a partial one, and the secret never exists under a wider mode.
-/// Missing parent directories are created 0700 (unix); existing ones keep
-/// their mode. The temp file is removed when the write or the rename fails.
+/// Missing parent directories are created with `create_private_dir`. The temp
+/// file is removed when the write or the rename fails.
 pub(crate) fn write_secret(path: &Path, bytes: &[u8]) -> Result<()> {
     if let Some(dir) = path.parent() {
-        let mut builder = DirBuilder::new();
-        builder.recursive(true);
-        #[cfg(unix)]
-        builder.mode(0o700);
-        builder.create(dir)?;
+        create_private_dir(dir)?;
     }
     let temp = temp_sibling(path);
-    let mut options = OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    options.mode(0o600);
-    let mut file = options.open(&temp)?;
+    let mut file = open_private(OpenOptions::new().write(true).create_new(true), &temp)?;
     let written = file.write_all(bytes).and_then(|()| file.sync_all());
     drop(file);
     if let Err(e) = written.and_then(|()| std::fs::rename(&temp, path)) {
@@ -39,6 +31,23 @@ pub(crate) fn write_secret(path: &Path, bytes: &[u8]) -> Result<()> {
         return Err(e.into());
     }
     Ok(())
+}
+
+/// Creates `dir` and its missing parents 0700 (unix); directories that already
+/// exist keep their mode.
+pub(crate) fn create_private_dir(dir: &Path) -> std::io::Result<()> {
+    let mut builder = DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    builder.mode(0o700);
+    builder.create(dir)
+}
+
+/// Opens `path` with `options`; a file it creates is 0600 (unix).
+pub(crate) fn open_private(options: &mut OpenOptions, path: &Path) -> std::io::Result<File> {
+    #[cfg(unix)]
+    options.mode(0o600);
+    options.open(path)
 }
 
 /// `.<name>.<pid>.<nanos>.<n>.tmp` beside `path`: the pid and counter keep

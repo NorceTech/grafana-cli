@@ -93,7 +93,7 @@ impl GrafanaClient {
                 && matches!(self.auth, AuthProvider::OAuth(_))
             {
                 if let AuthProvider::OAuth(source) = &self.auth {
-                    auth::invalidate(source);
+                    auth::invalidate(source)?;
                 }
                 oauth_attempt += 1;
                 continue;

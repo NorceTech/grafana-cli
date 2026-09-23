@@ -23,7 +23,7 @@ grafana-cli/
 │   ├── config.rs      # config.toml model, path, load/save, profile resolution
 │   ├── environment.rs # Environment (the only env reader), ProfileOverrides
 │   ├── auth.rs        # AuthProvider, *_command via sh -c, OAuth token fetch
-│   ├── token_cache.rs # OAuth tokens.json: path, lookup, store, remove
+│   ├── token_cache.rs # OAuth tokens.json: path, lookup, locked store/remove
 │   ├── secret_file.rs # write_secret: atomic owner-only writes of secret files
 │   ├── fanout.rs      # --profile a,b / --all-profiles, overrides, JoinSet, exit aggregation
 │   ├── datasource.rs  # Kind enum; pick: flag > sole of type > unique default
@@ -115,3 +115,4 @@ nix fmt                      # treefmt: rustfmt + nixfmt + prettier (also the pr
 - `auth::from_profile` order is oauth > token/token_command > basic, so `--token` cannot turn an OAuth profile into token auth.
 - `*_command` secrets run as `sh -c "<args joined by spaces>"` at request time; a non-zero exit or empty output is an auth error.
 - No HTTP timeouts and no retries except the single OAuth 401 refetch; fanout spawns one task per profile with no concurrency cap.
+- `tokens.json` read-modify-writes (store after a fetch, invalidate after a 401) go through `token_cache::update`, which holds an in-process mutex plus an exclusive lock on the `tokens.json.lock` sidecar, so parallel profiles and parallel gcli processes keep each other's tokens. Plain lookups take no lock: every write is an atomic rename.
