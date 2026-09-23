@@ -36,6 +36,10 @@
         }:
         let
           toolchain = inputs.fenix.packages.${system}.complete.toolchain;
+          rustPlatform = pkgs.makeRustPlatform {
+            cargo = toolchain;
+            rustc = toolchain;
+          };
         in
         {
           treefmt = {
@@ -46,6 +50,32 @@
           };
           pre-commit.settings.hooks = {
             treefmt.enable = true;
+          };
+          packages.default = rustPlatform.buildRustPackage {
+            pname = "gcli";
+            version = (lib.importTOML ./Cargo.toml).package.version;
+            src = lib.fileset.toSource {
+              root = ./.;
+              fileset = lib.fileset.unions [
+                ./.cargo
+                ./Cargo.lock
+                ./Cargo.toml
+                ./src
+              ];
+            };
+            cargoLock.lockFile = ./Cargo.lock;
+            # Integration tests spawn local wiremock servers and write qa/ transcripts; run them with `cargo test` in the dev shell.
+            doCheck = false;
+            meta = {
+              description = "Command line client for querying Grafana logs, metrics and traces";
+              mainProgram = "gcli";
+            };
+          };
+          packages.gcli = config.packages.default;
+          apps.default = {
+            type = "app";
+            program = lib.getExe config.packages.default;
+            meta.description = config.packages.default.meta.description;
           };
           devShells.default = pkgs.mkShell {
             inherit (config.pre-commit) shellHook;
