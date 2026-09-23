@@ -323,6 +323,39 @@ async fn s5_logs_labels() {
     );
 }
 
+// Loki answers an empty label result with {"status":"success"} and no data.
+#[tokio::test]
+async fn s5_logs_labels_without_data_is_an_empty_array() {
+    let (start_ns, end_ns) = window_ns(FROM, TO);
+    let server = MockServer::start().await;
+    loki_datasources_mock().expect(1).mount(&server).await;
+    Mock::given(method("GET"))
+        .and(path("/api/datasources/proxy/uid/loki1/loki/api/v1/labels"))
+        .and(query_param("start", start_ns.as_str()))
+        .and(query_param("end", end_ns.as_str()))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"status": "success"})))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = token_config(&server.uri());
+    let out = run_logs(&config, &["logs", "labels", "--from", FROM, "--to", TO]);
+
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "[]");
+    server.verify().await;
+    write_transcript(
+        "s5_logs_labels_without_data.txt",
+        "gcli logs labels --from 2026-08-28T14:00:00Z --to 2026-08-28T15:00:00Z",
+        &out,
+    );
+}
+
 #[tokio::test]
 async fn s5_logs_label_values() {
     let (start_ns, end_ns) = window_ns(FROM, TO);

@@ -24,11 +24,11 @@ One module per command family; each owns its clap types and turns Grafana dataso
 - Wire time units: Loki takes ns strings (`to_ns_string`), Prometheus fractional epoch seconds (`to_epoch_secs`), Tempo search whole epoch seconds (start floored, end ceiled; Tempo answers a fraction with 400). Windows always come from `timeutil::resolve_window`.
 - The command shapes tables itself: return `CommandOutput::Table { headers, rows }` when `mode == OutputMode::Table`, else `Json` / `Logs` / `Raw`.
 - Variants: `Logs` = `LogRecord`s rendered as JSONL; `Raw` = lossless upstream passthrough, printed exactly like `Json`; `Json` = reshaped value with stable field names.
-- `labels` and `label_values` ignore `mode` and always return a JSON array.
+- `labels` and `label_values` ignore `mode` and always return a JSON array; `[]` when Loki's success reply leaves `data` out, which it does for an empty result.
 
 ## CONVENTIONS
 
-- Deterministic output: logs sort by (ns timestamp, line), never by the ms-truncated `ts` string (`logs.rs:132`); range series sort by `label_string` (sorted keys), samples by ts.
+- Deterministic output: logs sort by (ns timestamp, line), never by the ms-truncated `ts` string (`logs.rs:135`); range series sort by `label_string` (sorted keys), samples by ts.
 - Field names are README contracts: metrics `{metric, value, ts}` with values kept as upstream strings; traces search `{traceID, rootServiceName, rootTraceName, durationMs, start}`; datasources `{name, type, uid, url, isDefault}`.
 - Errors: a 2xx reply of the wrong shape (no `data`, wrong `resultType`, a malformed stream or entry) is `reply.malformed(what)`, an `Error::Response` carrying the reply's status and naming its path, content type and first 200 chars. Prometheus and Loki replies pass `success_data` (`mod.rs`) first: `"status": "error"` is `Error::Http` with the upstream `error`, any other status is malformed. Bad `--at`/`--step` input is `Error::Config` (exit 2).
 - Typed until the wire: datasource types are `datasource::Kind` and Loki's direction is `logs::Direction`; each becomes a string only via its `as_str()` where the request or the type filter is built.

@@ -84,7 +84,10 @@ async fn loki_context(
 
 /// The names in a `labels` or `label/{label}/values` reply.
 fn string_array(reply: &Reply) -> Result<Vec<String>> {
-    let data = success_data(reply)?.ok_or_else(|| reply.malformed("no data array"))?;
+    // Loki leaves `data` out when no label or value matches.
+    let Some(data) = success_data(reply)? else {
+        return Ok(Vec::new());
+    };
     Vec::<String>::deserialize(data).map_err(|e| reply.malformed(&format!("data: {e}")))
 }
 
@@ -295,6 +298,16 @@ mod tests {
             matches!(&result, Err(Error::Http { status: 200, message: Some(m), .. }) if m == "parse error"),
             "{result:?}"
         );
+    }
+
+    #[test]
+    fn label_reply_without_data_is_empty() {
+        // Loki leaves `data` out when no label or value matches.
+        let reply = Reply::ok(json!({"status": "success"}));
+
+        let names = string_array(&reply).unwrap();
+
+        assert!(names.is_empty(), "{names:?}");
     }
 
     #[test]
