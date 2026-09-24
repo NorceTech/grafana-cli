@@ -271,9 +271,9 @@ mod tests {
     fn datasources_type_filter() {
         assert!(matches!(
             parse(&["datasources"]).command,
-            Commands::Query(Query::Datasources(DatasourcesArgs { r#type: None }))
+            Commands::Query(Query::Datasources(DatasourcesArgs { r#type: None, .. }))
         ));
-        let Commands::Query(Query::Datasources(DatasourcesArgs { r#type })) =
+        let Commands::Query(Query::Datasources(DatasourcesArgs { r#type, .. })) =
             parse(&["datasources", "--type", "loki"]).command
         else {
             panic!()

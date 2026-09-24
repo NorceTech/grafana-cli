@@ -15,6 +15,16 @@ pub struct Datasource {
     pub is_default: bool,
 }
 
+/// One datasource's health: the `/api/datasources/uid/<uid>/health` reply's
+/// `status` and `message`. Datasource types without health support answer
+/// 4xx/5xx, an ordinary `Error::Http`; the caller decides what that means.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DatasourceHealth {
+    pub status: String,
+    #[serde(default)]
+    pub message: String,
+}
+
 /// Where a 2xx reply came from: what an error about its body names.
 #[derive(Debug, Clone)]
 pub struct ReplyMeta {
@@ -114,6 +124,14 @@ impl GrafanaClient {
         let reply = self.get_json("/api/datasources", &[]).await?;
         Vec::<Datasource>::deserialize(&reply.body)
             .map_err(|e| reply.malformed(&format!("unexpected datasource list: {e}")))
+    }
+
+    pub async fn datasource_health(&self, uid: &str) -> Result<DatasourceHealth> {
+        let reply = self
+            .get_json(&format!("/api/datasources/uid/{uid}/health"), &[])
+            .await?;
+        DatasourceHealth::deserialize(&reply.body)
+            .map_err(|e| reply.malformed(&format!("unexpected datasource health: {e}")))
     }
 
     pub async fn proxy_request(
@@ -581,6 +599,70 @@ mod tests {
         assert!(list[0].is_default);
         assert!(!list[1].is_default);
         assert_eq!(list[1].uid, "u2");
+    }
+
+    #[tokio::test]
+    async fn datasource_health_parses_status_and_message() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/datasources/uid/u1/health"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "status": "OK", "message": "Data source is working"
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let health = client(&server.uri(), AuthProvider::Token("t".into()))
+            .datasource_health("u1")
+            .await
+            .unwrap();
+        assert_eq!(health.status, "OK");
+        assert_eq!(health.message, "Data source is working");
+        server.verify().await;
+    }
+
+    #[tokio::test]
+    async fn datasource_health_unsupported_type_is_an_http_error() {
+        // Datasource types without health support answer 4xx with their own
+        // message; the client reports it like any other non-2xx reply.
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/datasources/uid/u2/health"))
+            .respond_with(ResponseTemplate::new(404).set_body_json(json!({
+                "message": "Data source does not support health checks"
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let err = client(&server.uri(), AuthProvider::Token("t".into()))
+            .datasource_health("u2")
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&err, Error::Http { status: 404, message, .. }
+                if message.as_deref() == Some("Data source does not support health checks")),
+            "{err:?}"
+        );
+        server.verify().await;
+    }
+
+    #[tokio::test]
+    async fn datasource_health_without_status_is_a_response_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/datasources/uid/u1/health"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"message": "x"})))
+            .mount(&server)
+            .await;
+        let err = client(&server.uri(), AuthProvider::Token("t".into()))
+            .datasource_health("u1")
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&err, Error::Response { status: 200, message }
+                if message.contains("/api/datasources/uid/u1/health")),
+            "{err:?}"
+        );
     }
 
     #[tokio::test]
