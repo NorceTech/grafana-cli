@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+    inputs:
+      upload:
+        description: Upload each platform's binary as an artifact
+        type: boolean
+        default: false
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.asset }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            package: default
+            asset: gcli-linux-x86_64
+          - runner: ubuntu-24.04-arm
+            package: default
+            asset: gcli-linux-aarch64
+          - runner: macos-latest
+            package: default
+            asset: gcli-macos-aarch64
+          # Cross-compiled with mingw; there is no Windows host to run clippy and the tests on.
+          - runner: ubuntu-latest
+            package: gcli-windows
+            asset: gcli-windows-x86_64.exe
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      # The key covers exactly the files that invalidate the dependency build, so a key miss
+      # rebuilds everything anyway and starting from an empty store loses nothing but downloads.
+      # Only main saves; pull requests and release tags restore main's store.
+      - uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ matrix.asset }}-${{ hashFiles('flake.nix', 'flake.lock', 'Cargo.toml', 'Cargo.lock', '.cargo/config.toml') }}
+          save: ${{ github.ref == 'refs/heads/main' }}
+      - if: matrix.package == 'default'
+        run: nix flake check --print-build-logs
+      - run: nix build --print-build-logs .#${{ matrix.package }}
+      - if: inputs.upload
+        run: cp result/bin/gcli* ${{ matrix.asset }}
+      - if: inputs.upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.asset }}
+          if-no-files-found: error
