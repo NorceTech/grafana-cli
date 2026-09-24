@@ -249,7 +249,7 @@ fn s12_help_version_completions() {
     let version = spawn_gcli(&["--version"], &[]);
     assert_eq!(version.status.code(), Some(0));
     assert!(
-        String::from_utf8_lossy(&version.stdout).contains("0.1.0"),
+        String::from_utf8_lossy(&version.stdout).contains(env!("CARGO_PKG_VERSION")),
         "--version missing version string"
     );
 
