@@ -22,7 +22,7 @@ grafana-cli/
 │   ├── client.rs      # GrafanaClient: auth headers, OAuth 401 retry, proxy GET
 │   ├── config.rs      # config.toml model, path, load/save, profile resolution
 │   ├── environment.rs # Environment (the only env reader), ProfileOverrides
-│   ├── auth.rs        # AuthProvider, *_command via sh -c, OAuth token fetch
+│   ├── auth/          # mod.rs AuthProvider + from_profile, oauth.rs token fetch/cache, secret.rs sh -c commands
 │   ├── token_cache.rs # OAuth tokens.json: TokenKey, lookup, locked store/remove/forget
 │   ├── secret_file.rs # write_secret: atomic owner-only writes of secret files
 │   ├── fanout.rs      # --profile a,b / --all-profiles, overrides, JoinSet, exit aggregation
@@ -44,7 +44,7 @@ grafana-cli/
 | Rendering, multi-profile wrapping      | `src/render.rs`                             | the only stdout writer                                                                                  |
 | New error kind or exit code            | `src/error.rs`                              | `emit_json_error` + `exit_code` + their tests + README table                                            |
 | Profile selection, env vars            | `src/{environment,fanout,config}.rs`        | see NOTES                                                                                               |
-| Auth modes, OAuth token cache          | `src/{auth,token_cache,client}.rs`          |                                                                                                         |
+| Auth modes, OAuth token cache          | `src/{auth/,token_cache.rs,client.rs}`      |                                                                                                         |
 | Time windows                           | `src/timeutil.rs`                           | resolved once per invocation, before fanout, by `Query::resolve` (`src/commands/mod.rs`)                |
 | Integration tests                      | `tests/`                                    | own AGENTS.md                                                                                           |
 | User-facing contract                   | `README.md`                                 | sections Output modes, Errors and exit codes, For AI agents                                             |
@@ -59,7 +59,7 @@ Refs = ast-grep AST-node references across `src/` and `tests/`, definition exclu
 | `OutputMode`                   | enum   | `src/output.rs:6`         | 53   | json/table, resolved once in `app::run`                                                                                         |
 | `Config`                       | struct | `src/config.rs:39`        | ~31  | config.toml model; profile CRUD and resolution                                                                                  |
 | `GrafanaClient`                | struct | `src/client.rs:87`        | 31   | HTTP facade: `health`, `datasources`, `proxy_request`                                                                           |
-| `AuthProvider`                 | enum   | `src/auth.rs:6`           | 30   | Token / Basic / OAuth, built by `auth::from_profile`                                                                            |
+| `AuthProvider`                 | enum   | `src/auth/mod.rs`         | 30   | Token / Basic / OAuth, built by `auth::from_profile`                                                                            |
 | `resolve_window`               | fn     | `src/timeutil.rs:4`       | 20   | `--since` / `--from` / `--to` -> UTC bounds                                                                                     |
 | `Datasource`                   | struct | `src/client.rs:9`         | 20   | `/api/datasources` row fed to `datasource::resolve`                                                                             |
 | `Query`                        | enum   | `src/commands/mod.rs:69`  | 18   | clap subcommands that fan out; `Query::resolve` fixes the window once, `Resolved::run` delegates to each family's `run`         |
