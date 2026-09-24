@@ -111,7 +111,8 @@ mod tests {
         let (start, end) = resolve_window(None, None, None).unwrap();
         let window = end - start;
         assert_eq!(window.num_seconds(), 3600);
-        assert!((end - Utc::now()).num_seconds().abs() <= 1);
+        // 5 s, not 1 s: a loaded CI runner can sit between the two now() reads
+        assert!((end - Utc::now()).num_seconds().abs() <= 5);
     }
 
     #[test]
@@ -157,7 +158,7 @@ mod tests {
     #[test]
     fn from_only_defaults_to_now() {
         let (_, end) = resolve_window(None, Some("2026-01-01T00:00:00Z"), None).unwrap();
-        assert!((end - Utc::now()).num_seconds().abs() <= 1);
+        assert!((end - Utc::now()).num_seconds().abs() <= 5);
     }
 
     #[test]

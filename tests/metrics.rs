@@ -328,7 +328,9 @@ fn epoch_formatting_contract() {
         .unwrap()
         .with_timezone(&chrono::Utc);
     let secs = gcli_lib::timeutil::to_epoch_secs(dt);
-    assert_eq!(format!("{secs}"), epoch_secs("2026-08-28T15:00:00Z"));
+    // literal pin: deriving it with to_epoch_secs again would compare the
+    // function with itself and pass even if the encoder drifted
+    assert_eq!(format!("{secs}"), "1787929200");
     assert!(!format!("{secs}").contains('.'));
     assert_eq!(
         dt.to_rfc3339_opts(SecondsFormat::Millis, true),
