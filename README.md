@@ -24,7 +24,7 @@ From a checkout of this repository:
 ```console
 $ cargo install --path .
 $ gcli --version
-gcli 0.1.0
+gcli 0.0.1-alpha
 ```
 
 To run from source without installing:
