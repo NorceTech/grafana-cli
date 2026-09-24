@@ -26,17 +26,28 @@ fn ds_mock() -> Mock {
     ]))
 }
 
+/// The shape Tempo's `api/traces/{id}` answers with: OTLP `batches`, one per
+/// resource, spans under `scopeSpans`, u64 nanos as strings. Two batches so a
+/// table render shows one row per span with distinct services.
 fn trace_body() -> Value {
-    json!({
-        "traceID": "abc123",
-        "spans": [
-            {"resource": {"service.name": "checkout"}, "name": "GET /cart",
-             "durationNanos": 1500000},
-            {"resource": {"service.name": "cart"}, "name": "SELECT items",
-             "durationNanos": 2500000}
-        ],
-        "extraTempoField": {"nested": [1, 2, 3]}
-    })
+    json!({"batches": [
+        {"resource": {"attributes": [
+            {"key": "service.name", "value": {"stringValue": "checkout"}}
+        ]},
+         "scopeSpans": [{"scope": {"name": "http"}, "spans": [
+            {"traceId": "abc123", "spanId": "s1", "name": "GET /cart",
+             "startTimeUnixNano": "1759372800000000000",
+             "endTimeUnixNano": "1759372800001500000"}
+         ]}]},
+        {"resource": {"attributes": [
+            {"key": "service.name", "value": {"stringValue": "cart"}}
+        ]},
+         "scopeSpans": [{"scope": {"name": "db"}, "spans": [
+            {"traceId": "abc123", "spanId": "s2", "name": "SELECT items",
+             "startTimeUnixNano": "1759372800000500000",
+             "endTimeUnixNano": "1759372800003000000"}
+         ]}]}
+    ]})
 }
 
 fn search_body() -> Value {
@@ -208,6 +219,38 @@ async fn s7_traces_404() {
     assert!(stderr.contains("trace not found"), "{stderr}");
     server.verify().await;
     write_transcript("s7_traces_404.txt", "gcli traces get deadbeef", &out);
+}
+
+// Table mode renders one row per span from the OTLP batches.
+#[tokio::test]
+async fn s21_traces_get_table_renders_one_row_per_span() {
+    let server = MockServer::start().await;
+    ds_mock().expect(1).mount(&server).await;
+    Mock::given(method("GET"))
+        .and(path("/api/datasources/proxy/uid/tempo1/api/traces/abc123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(trace_body()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let cfg = token_config(&server.uri());
+    let env = ("GCLI_CONFIG_DIR", cfg.path().to_str().unwrap());
+    let out = spawn_gcli(&["traces", "get", "abc123", "--output", "table"], &[env]);
+
+    let stdout = assert_success(&out);
+    for cell in ["GET /cart", "SELECT items", "checkout", "cart"] {
+        assert!(stdout.contains(cell), "{cell} missing: {stdout}");
+    }
+    for header in ["service", "name", "durationMillis"] {
+        assert!(stdout.contains(header), "{header} missing: {stdout}");
+    }
+    assert!(!stdout.trim_start().starts_with('{'), "{stdout}");
+    server.verify().await;
+    write_transcript(
+        "s21_traces_get_table.txt",
+        "gcli traces get abc123 --output table",
+        &out,
+    );
 }
 
 // The trace id becomes a path segment and reqwest resolves `..`, so an
