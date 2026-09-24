@@ -870,6 +870,241 @@ async fn s33_logs_label_values_match_scopes_the_query() {
     );
 }
 
+// --follow: the initial window query prints first (ascending, like search),
+// then each poll prints only entries not printed yet. Poll 1 re-sends the
+// boundary entry plus one new one; poll 2 re-sends its boundary again plus
+// one new one: exactly three JSONL lines, even though --output table was
+// asked for. The child is read line by line under a bounded timeout and
+// stopped with SIGINT after the third line, which must exit 0.
+#[tokio::test]
+async fn s34_logs_search_follow_prints_batches_and_dedups_the_boundary() {
+    use std::sync::{Arc, Mutex};
+    use tokio::io::{AsyncBufReadExt, BufReader};
+
+    let (start_ns, end_ns) = window_ns(FROM, TO);
+    let e1 = ts_ns("2026-08-28T14:59:00Z");
+    let e2 = ts_ns("2026-08-28T14:59:30Z");
+    let e3 = ts_ns("2026-08-28T14:59:59Z");
+    let query_range_path = "/api/datasources/proxy/uid/loki1/loki/api/v1/query_range";
+    let streams = |ns_lines: &[(&String, &str)]| {
+        json!({
+            "status": "success",
+            "data": {
+                "resultType": "streams",
+                "result": [{
+                    "stream": {"job": "api"},
+                    "values": ns_lines
+                        .iter()
+                        .map(|(ns, line)| json!([ns, line]))
+                        .collect::<Vec<_>>()
+                }]
+            }
+        })
+    };
+
+    let server = MockServer::start().await;
+    loki_datasources_mock().expect(1).mount(&server).await;
+    // The initial query: today's search request over the fixed window.
+    Mock::given(method("GET"))
+        .and(path(query_range_path))
+        .and(query_param("direction", "backward"))
+        .and(query_param("start", start_ns.as_str()))
+        .and(query_param("end", end_ns.as_str()))
+        .and(query_param("limit", "100"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(streams(&[(&e1, "first")])))
+        .expect(1)
+        .mount(&server)
+        .await;
+    // Poll 1 (forward, from the last seen ns): the boundary entry again plus
+    // one new entry.
+    Mock::given(method("GET"))
+        .and(path(query_range_path))
+        .and(query_param("direction", "forward"))
+        .and(query_param("start", e1.as_str()))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(streams(&[(&e1, "first"), (&e2, "second")])),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    // Poll 2: its boundary entry again plus one new entry.
+    Mock::given(method("GET"))
+        .and(path(query_range_path))
+        .and(query_param("direction", "forward"))
+        .and(query_param("start", e2.as_str()))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(streams(&[(&e2, "second"), (&e3, "third")])),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    // Every later poll: nothing new, until the test stops the child.
+    Mock::given(method("GET"))
+        .and(path(query_range_path))
+        .and(query_param("direction", "forward"))
+        .and(query_param("start", e3.as_str()))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "status": "success",
+            "data": {"resultType": "streams", "result": []}
+        })))
+        .mount(&server)
+        .await;
+
+    let config = token_config(&server.uri());
+    let mut child = spawn_gcli_streaming(
+        &[
+            "logs",
+            "search",
+            "{job=\"api\"}",
+            "--from",
+            FROM,
+            "--to",
+            TO,
+            "--follow",
+            "--interval",
+            "50ms",
+            "--output",
+            "table",
+        ],
+        &[("GCLI_CONFIG_DIR", config.path().to_str().unwrap())],
+    );
+    // Drain stderr in the background so a mid-run failure stays visible in
+    // the assertion messages instead of blocking the child on a full pipe.
+    let stderr_text = Arc::new(Mutex::new(String::new()));
+    let stderr_sink = Arc::clone(&stderr_text);
+    let stderr_pipe = child.stderr.take();
+    let stderr_task = tokio::spawn(async move {
+        let mut err = match stderr_pipe {
+            Some(err) => err,
+            None => return,
+        };
+        let mut buf = String::new();
+        let _ = tokio::io::AsyncReadExt::read_to_string(&mut err, &mut buf).await;
+        *stderr_sink.lock().unwrap() = buf;
+    });
+    let mut stdout = BufReader::new(child.stdout.take().expect("piped stdout"));
+
+    let mut lines: Vec<String> = Vec::new();
+    for expected in ["first", "second", "third"] {
+        let mut line = String::new();
+        let read = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            stdout.read_line(&mut line),
+        )
+        .await
+        .expect("line within 5s")
+        .unwrap_or_else(|e| panic!("read stdout: {e}"));
+        assert!(
+            read > 0,
+            "stdout closed after {} lines (wanted '{expected}'); stderr: {}",
+            lines.len(),
+            stderr_text.lock().unwrap()
+        );
+        lines.push(line.trim_end().to_string());
+    }
+    let records: Vec<Value> = lines
+        .iter()
+        .map(|l| serde_json::from_str(l).expect("follow output is JSONL even with --output table"))
+        .collect();
+    let got: Vec<&str> = records
+        .iter()
+        .map(|r| r["line"].as_str().unwrap_or_default())
+        .collect();
+    assert_eq!(
+        got,
+        ["first", "second", "third"],
+        "stderr: {}",
+        stderr_text.lock().unwrap()
+    );
+    for record in &records {
+        assert_eq!(record["profile"], "p", "{record}");
+        assert_eq!(record["labels"]["job"], "api", "{record}");
+    }
+    let ts: Vec<&str> = records
+        .iter()
+        .map(|r| r["ts"].as_str().unwrap_or_default())
+        .collect();
+    assert!(ts[0] < ts[1] && ts[1] < ts[2], "{ts:?}");
+
+    // SIGINT ends the run with exit 0.
+    let pid = child.id().expect("child running").to_string();
+    std::process::Command::new("kill")
+        .args(["-INT", &pid])
+        .status()
+        .expect("send SIGINT");
+    let status = tokio::time::timeout(std::time::Duration::from_secs(5), child.wait())
+        .await
+        .expect("exits on SIGINT")
+        .expect("wait for child");
+    assert_eq!(
+        status.code(),
+        Some(0),
+        "stderr: {}",
+        stderr_text.lock().unwrap()
+    );
+    stderr_task.abort();
+    server.verify().await;
+    write_transcript_multi(
+        "s34_logs_search_follow.txt",
+        &format!(
+            "$ gcli logs search '{{job=\"api\"}}' --from {FROM} --to {TO} --follow --interval 50ms --output table\n\
+             --- stdout ---\n{}--- stderr ---\n{}--- exit: {} ---\n",
+            lines.iter().map(|l| format!("{l}\n")).collect::<String>(),
+            stderr_text.lock().unwrap(),
+            status.code().unwrap_or(-1),
+        ),
+    );
+}
+
+// `--follow` interleaves one profile's entries into one JSONL stream; asking
+// for several (--profile a,b, --all-profiles) is a config error before any
+// request is made.
+#[tokio::test]
+async fn s34_logs_search_follow_needs_exactly_one_profile() {
+    let server = MockServer::start().await;
+    let config = fixture_config(&format!(
+        "current_profile = \"a\"\n\
+         [profiles.a]\nurl = \"{url}\"\ntoken = \"t\"\n\
+         [profiles.b]\nurl = \"{url}\"\ntoken = \"t\"\n",
+        url = server.uri()
+    ));
+    let base = [
+        "logs",
+        "search",
+        "{job=\"api\"}",
+        "--from",
+        FROM,
+        "--to",
+        TO,
+        "--follow",
+    ];
+    let mut csv = vec!["--profile", "a,b"];
+    csv.extend_from_slice(base.as_slice());
+    let mut all = vec!["--all-profiles"];
+    all.extend_from_slice(base.as_slice());
+
+    let out_csv = run_logs(&config, &csv);
+    assert_config_error_naming(&out_csv, "--follow");
+    let out_all = run_logs(&config, &all);
+    assert_config_error_naming(&out_all, "--follow");
+
+    assert_no_requests(&server).await;
+    write_transcript_multi(
+        "s34_logs_follow_multiple_profiles.txt",
+        &[
+            transcript_block(
+                "gcli --profile a,b logs search '{job=\"api\"}' --from 2026-08-28T14:00:00Z --to 2026-08-28T15:00:00Z --follow",
+                &out_csv,
+            ),
+            transcript_block(
+                "gcli --all-profiles logs search '{job=\"api\"}' --from 2026-08-28T14:00:00Z --to 2026-08-28T15:00:00Z --follow",
+                &out_all,
+            ),
+        ]
+        .concat(),
+    );
+}
+
 // A --since so long that chrono cannot subtract it must not panic the CLI:
 // one config error naming the duration, and no request.
 #[tokio::test]

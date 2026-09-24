@@ -2,16 +2,17 @@ use clap::CommandFactory;
 use clap_complete::generate;
 use gcli_lib::auth::token_cache;
 use gcli_lib::client::GrafanaClient;
+use gcli_lib::commands::logs::{self, LogsCmd, SearchArgs};
 use gcli_lib::commands::profile::ProfileCmd;
 use gcli_lib::commands::{self, Query};
-use gcli_lib::config::{Config, config_path};
+use gcli_lib::config::{Config, Profile, config_path};
 use gcli_lib::environment::{Environment, ProfileOverrides};
 use gcli_lib::output::{OutputMode, resolve_output};
 use std::io::IsTerminal;
 use std::sync::Arc;
 
 use crate::cli::{Cli, Commands, Shell};
-use crate::render::{fail, print_output, print_results, write_stdout};
+use crate::render::{fail, print_follow_batch, print_output, print_results, write_stdout};
 use gcli_lib::error::Error;
 use std::time::Duration;
 
@@ -115,6 +116,15 @@ async fn dispatch(
         username: cli.username.clone(),
         password: cli.password.clone(),
     };
+    let follow_args = match query {
+        Query::Logs {
+            cmd: LogsCmd::Search(args),
+        } if args.follow => Some(args),
+        _ => None,
+    };
+    // The follow path below needs the cache dir after `env.overrides` has
+    // moved into the profile resolution, so it is taken out up front.
+    let cache_dir = env.cache_dir.clone();
     let selected = config_path(env.config_dir.as_deref())
         .and_then(|path| Config::load_from(&path))
         .and_then(|config| {
@@ -130,6 +140,11 @@ async fn dispatch(
         Ok(p) => p,
         Err(e) => return fail(cli.profile.as_deref(), &e),
     };
+    // --follow streams from exactly one profile and never returns, so it
+    // bypasses the fanout-and-render pipeline entirely.
+    if let Some(args) = follow_args {
+        return follow(cli, &profiles, args, cache_dir, timeout).await;
+    }
     // One time window for every profile: a bad one is a single error.
     let query = match query.resolve() {
         Ok(resolved) => Arc::new(resolved),
@@ -166,6 +181,122 @@ async fn dispatch(
     })
     .await;
     print_results(&results, mode)
+}
+
+/// `logs search --follow`: prints the newest `--limit` entries of the window
+/// ascending (exactly `search`'s output), then polls every `--interval` and
+/// prints each new batch as it arrives, always as JSONL. SIGINT/SIGTERM and a
+/// closed stdout end the run with exit 0; a failed request ends it with that
+/// error's JSON and exit code.
+///
+/// Five parameters is more than the usual three, but they are the dispatch
+/// context (flags, selected profiles, environment, timeout) every command
+/// path threads through plus the follow arguments; grouping them would be a
+/// one-off struct with a single caller.
+async fn follow(
+    cli: &Cli,
+    profiles: &[(String, Profile)],
+    args: &SearchArgs,
+    cache_dir: Option<std::path::PathBuf>,
+    timeout: Duration,
+) -> i32 {
+    if cli.all_profiles {
+        return fail(None, &follow_selection_error("--all-profiles"));
+    }
+    let [(name, profile)] = profiles else {
+        return fail(None, &follow_selection_error("--profile"));
+    };
+    let interval = match humantime::parse_duration(&args.interval) {
+        Ok(interval) => interval,
+        Err(e) => {
+            return fail(
+                Some(name),
+                &Error::Config {
+                    message: format!("--interval '{}': {e}", args.interval),
+                },
+            );
+        }
+    };
+    // The url is checked before any auth runs, so a secret-fetching command
+    // never executes for a profile that cannot be queried.
+    let base = match gcli_lib::client::BaseUrl::parse(&profile.url) {
+        Ok(base) => base,
+        Err(e) => return fail(Some(name), &e),
+    };
+    let auth =
+        match gcli_lib::auth::from_profile(name, profile, cache_dir.as_deref(), timeout).await {
+            Ok(auth) => auth,
+            Err(e) => return fail(Some(name), &e),
+        };
+    let http = match reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .read_timeout(timeout)
+        .build()
+    {
+        Ok(http) => http,
+        Err(e) => return fail(Some(name), &Error::Io(std::io::Error::other(e))),
+    };
+    let client = match GrafanaClient::new(base.as_str(), auth, http) {
+        Ok(client) => client,
+        Err(e) => return fail(Some(name), &e),
+    };
+    let (initial, mut stream) = match logs::follow_start(&client, name, args).await {
+        Ok(started) => started,
+        Err(e) => return fail(Some(name), &e),
+    };
+    print_follow_batch(&initial);
+    let mut shutdown = match Shutdown::new() {
+        Ok(shutdown) => shutdown,
+        Err(e) => return fail(Some(name), &Error::Io(e)),
+    };
+    loop {
+        tokio::select! {
+            _ = tokio::time::sleep(interval) => {
+                match stream.poll(&client).await {
+                    Ok(batch) => print_follow_batch(&batch),
+                    Err(e) => return fail(Some(name), &e),
+                }
+            }
+            _ = shutdown.recv() => return 0,
+        }
+    }
+}
+
+fn follow_selection_error(selection: &str) -> Error {
+    Error::Config {
+        message: format!(
+            "logs search --follow streams exactly one profile, but several are selected \
+             with {selection}; drop --follow or select a single profile"
+        ),
+    }
+}
+
+// SIGINT and SIGTERM end a --follow run cleanly. Registered once, before the
+// loop, so a signal landing between two polls is still received.
+struct Shutdown {
+    #[cfg(unix)]
+    terminate: tokio::signal::unix::Signal,
+}
+
+impl Shutdown {
+    fn new() -> std::io::Result<Self> {
+        #[cfg(unix)]
+        return Ok(Self {
+            terminate: tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?,
+        });
+        #[cfg(not(unix))]
+        Ok(Self {})
+    }
+
+    async fn recv(&mut self) {
+        #[cfg(unix)]
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {}
+            _ = self.terminate.recv() => {}
+        }
+        #[cfg(not(unix))]
+        let _ = tokio::signal::ctrl_c().await;
+    }
 }
 
 fn profile_command(cmd: &ProfileCmd, mode: OutputMode, env: &Environment) -> i32 {

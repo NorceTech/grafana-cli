@@ -64,6 +64,22 @@ pub fn spawn_gcli_with_stdin(
     child.wait_with_output().expect("failed to run gcli")
 }
 
+/// The gcli binary with piped stdout and stderr for streaming tests (e.g.
+/// `logs search --follow`): read `child.stdout` line by line while the
+/// process runs, instead of waiting for it to exit. `kill_on_drop` keeps a
+/// failed test from leaking the child.
+pub fn spawn_gcli_streaming(args: &[&str], envs: &[(&str, &str)]) -> tokio::process::Child {
+    let mut command = gcli_command(args, envs);
+    command
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    tokio::process::Command::from(command)
+        .kill_on_drop(true)
+        .spawn()
+        .expect("failed to spawn gcli")
+}
+
 /// Config with one token-auth profile "p" pointing at `base_url`.
 pub fn token_config(base_url: &str) -> tempfile::TempDir {
     fixture_config(&format!(

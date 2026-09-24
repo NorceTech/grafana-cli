@@ -96,6 +96,16 @@ pub(crate) fn write_stdout(bytes: &[u8]) {
     }
 }
 
+/// One `logs search --follow` batch: JSONL, written and flushed as it
+/// arrives so a consumer tailing gcli sees each batch immediately (`--output`
+/// is ignored in follow mode). A closed stdout ends the run cleanly.
+pub(crate) fn print_follow_batch(records: &[gcli_lib::output::LogRecord]) {
+    let mut out = std::io::stdout().lock();
+    if let Err(e) = gcli_lib::output::write_jsonl(&mut out, records).and_then(|()| out.flush()) {
+        handle_stdout_error(e);
+    }
+}
+
 /// A stdout write or flush failed. Rust ignores SIGPIPE, so when the reader
 /// closes early (e.g. `gcli datasources | head`) the write returns `BrokenPipe`
 /// here instead of killing the process; we treat that as a clean success and
