@@ -10,7 +10,7 @@ Black-box integration suite: every test spawns the compiled `gcli` binary agains
 | ----------------------------------------------------------------------------------------------------------------- | ----------------------- | ---------------- |
 | profile add/list/use/set-token/remove, profile errors                                                             | `config_cli.rs`         | s1               |
 | health; datasources (`--type`, table)                                                                             | `health_datasources.rs` | s2, s3           |
-| logs search, labels, label-values; a path-traversing label rejected                                               | `logs.rs`               | s4, s5           |
+| logs search, labels, label-values; a path-traversing label rejected; out-of-range time windows                    | `logs.rs`               | s4, s5, s18      |
 | metrics instant/range, epoch wire format                                                                          | `metrics.rs`            | s6               |
 | traces get/search/404; a path-traversing trace id rejected                                                        | `traces.rs`             | s7               |
 | multi-profile fanout, exit codes, concurrency, a bad window failing once; overrides rejected for several profiles | `fanout_e2e.rs`         | s8a-f, s17a-b    |

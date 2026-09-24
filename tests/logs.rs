@@ -14,14 +14,14 @@ fn window_ns(from: &str, to: &str) -> (String, String) {
     let (start, end) =
         gcli_lib::timeutil::resolve_window(None, Some(from), Some(to)).expect("window");
     (
-        gcli_lib::timeutil::to_ns_string(start),
-        gcli_lib::timeutil::to_ns_string(end),
+        gcli_lib::timeutil::to_ns_string(start).expect("start ns"),
+        gcli_lib::timeutil::to_ns_string(end).expect("end ns"),
     )
 }
 
 fn ts_ns(rfc3339: &str) -> String {
     let dt = chrono::DateTime::parse_from_rfc3339(rfc3339).expect("fixture ts");
-    gcli_lib::timeutil::to_ns_string(dt.with_timezone(&chrono::Utc))
+    gcli_lib::timeutil::to_ns_string(dt.with_timezone(&chrono::Utc)).expect("ts ns")
 }
 
 fn token_config(base: &str) -> tempfile::TempDir {
@@ -533,6 +533,48 @@ async fn s4_logs_plain_text_error_is_the_message() {
     write_transcript(
         "s4_logs_plain_text_error.txt",
         "gcli logs search '{job=' --from 2026-08-28T14:00:00Z --to 2026-08-28T15:00:00Z",
+        &out,
+    );
+}
+
+// A --since so long that chrono cannot subtract it must not panic the CLI:
+// one config error naming the duration, and no request.
+#[tokio::test]
+async fn s18_since_beyond_representable_time_is_rejected_not_panicked() {
+    let server = MockServer::start().await;
+    let config = token_config(&server.uri());
+
+    let out = run_logs(
+        &config,
+        &["logs", "search", "{x=\"y\"}", "--since", "300000y"],
+    );
+
+    assert_config_error_naming(&out, "300000y");
+    assert_no_requests(&server).await;
+    write_transcript(
+        "s18_since_beyond_range.txt",
+        "gcli logs search '{x=\"y\"}' --since 300000y",
+        &out,
+    );
+}
+
+// Bounds outside the i64 nanosecond range cannot be sent to Loki at all;
+// they are config errors naming the flag, not silently clamped.
+#[tokio::test]
+async fn s18_from_outside_the_ns_range_is_rejected() {
+    let server = MockServer::start().await;
+    let config = token_config(&server.uri());
+
+    let out = run_logs(
+        &config,
+        &["logs", "labels", "--from", "1600-01-01T00:00:00Z"],
+    );
+
+    assert_config_error_naming(&out, "1600-01-01T00:00:00Z");
+    assert_no_requests(&server).await;
+    write_transcript(
+        "s18_from_outside_ns_range.txt",
+        "gcli logs labels --from 1600-01-01T00:00:00Z",
         &out,
     );
 }

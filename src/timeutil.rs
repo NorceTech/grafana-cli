@@ -1,5 +1,5 @@
 use crate::{Error, Result};
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Duration, SecondsFormat, Utc};
 
 pub fn resolve_window(
     since: Option<&str>,
@@ -10,22 +10,44 @@ pub fn resolve_window(
     let invalid = |what: &str, bad: &str| Error::Config {
         message: format!("invalid {what}: '{bad}'"),
     };
+    // Chrono's subtraction panics beyond its representable range and Loki's
+    // nanosecond wire format cannot express the i64-ns range's outside, so a
+    // window that far out is an error naming the flag that caused it.
+    let out_of_range = |flag: &str, bad: &str| Error::Config {
+        message: format!(
+            "{flag} '{bad}' reaches outside the queryable time range \
+             (1677-09-21 to 2262-04-11)"
+        ),
+    };
+    let in_ns_range = |flag: &str, bad: &str, dt: DateTime<Utc>| -> Result<DateTime<Utc>> {
+        if dt.timestamp_nanos_opt().is_some() {
+            return Ok(dt);
+        }
+        Err(out_of_range(flag, bad))
+    };
     match (since, from, to) {
         (None, None, None) => Ok((now - Duration::hours(1), now)),
         (Some(spec), None, None) => {
             let dur =
                 humantime::parse_duration(spec).map_err(|_| invalid("duration (--since)", spec))?;
-            let dur = Duration::from_std(dur).map_err(|_| invalid("duration (--since)", spec))?;
-            Ok((now - dur, now))
+            let dur = Duration::from_std(dur).map_err(|_| out_of_range("--since", spec))?;
+            let start = now
+                .checked_sub_signed(dur)
+                .ok_or_else(|| out_of_range("--since", spec))?;
+            Ok((in_ns_range("--since", spec, start)?, now))
         }
         (None, Some(from_s), to_s) => {
             let start = DateTime::parse_from_rfc3339(from_s)
                 .map_err(|_| invalid("RFC3339 timestamp (--from)", from_s))?
                 .with_timezone(&Utc);
+            let start = in_ns_range("--from", from_s, start)?;
             let end = match to_s {
-                Some(to_s) => DateTime::parse_from_rfc3339(to_s)
-                    .map_err(|_| invalid("RFC3339 timestamp (--to)", to_s))?
-                    .with_timezone(&Utc),
+                Some(to_s) => {
+                    let end = DateTime::parse_from_rfc3339(to_s)
+                        .map_err(|_| invalid("RFC3339 timestamp (--to)", to_s))?
+                        .with_timezone(&Utc);
+                    in_ns_range("--to", to_s, end)?
+                }
                 None => now,
             };
             if start > end {
@@ -44,9 +66,19 @@ pub fn resolve_window(
     }
 }
 
-pub fn to_ns_string(dt: DateTime<Utc>) -> String {
-    // ponytail: saturates at i64 nanosecond range (year ~2262); fine for logs.
-    dt.timestamp_nanos_opt().unwrap_or(i64::MAX).to_string()
+/// Loki's wire format: integer nanoseconds since the epoch, as a string.
+/// Dates outside 1677-09-21 to 2262-04-11 have no i64-nanosecond
+/// representation; `resolve_window` keeps every window inside that range.
+pub fn to_ns_string(dt: DateTime<Utc>) -> Result<String> {
+    dt.timestamp_nanos_opt()
+        .map(|ns| ns.to_string())
+        .ok_or_else(|| Error::Config {
+            message: format!(
+                "timestamp {} is outside the queryable time range \
+                 (1677-09-21 to 2262-04-11)",
+                dt.to_rfc3339_opts(SecondsFormat::Secs, true)
+            ),
+        })
 }
 
 /// Fractional epoch seconds (f64, not i64): Grafana/Prometheus APIs accept
@@ -143,11 +175,54 @@ mod tests {
         assert!(resolve_window(None, None, Some("not-a-date")).is_err());
     }
 
+    // chrono's date subtraction panics past its representable range; a huge
+    // --since must be a config error naming the duration instead.
+    #[test]
+    fn since_beyond_representable_time_is_a_config_error_not_a_panic() {
+        let result = resolve_window(Some("300000y"), None, None);
+
+        assert!(
+            matches!(&result, Err(Error::Config { message }) if message.contains("300000y")),
+            "{result:?}"
+        );
+    }
+
+    // Bounds beyond the i64 nanosecond range (1677-09-21 to 2262-04-11) have
+    // no Loki wire representation; they are config errors naming the flag.
+    #[test]
+    fn windows_outside_the_ns_range_are_config_errors() {
+        let cases = [
+            ("1600-01-01T00:00:00Z", None),
+            ("2270-01-01T00:00:00Z", None),
+            ("2026-01-01T00:00:00Z", Some("2270-01-01T00:00:00Z")),
+        ];
+        for (from, to) in cases {
+            let result = resolve_window(None, Some(from), to);
+
+            let named = to.unwrap_or(from);
+            assert!(
+                matches!(&result, Err(Error::Config { message }) if message.contains(named)),
+                "{from}/{to:?}: {result:?}"
+            );
+        }
+    }
+
     #[test]
     fn ns_string() {
         let dt: DateTime<Utc> = DateTime::from_timestamp(1_000_000_007, 500_000_000).unwrap();
-        assert_eq!(to_ns_string(dt), "1000000007500000000");
-        assert_eq!(to_ns_string(DateTime::UNIX_EPOCH), "0");
+        assert_eq!(to_ns_string(dt).unwrap(), "1000000007500000000");
+        assert_eq!(to_ns_string(DateTime::UNIX_EPOCH).unwrap(), "0");
+    }
+
+    // Beyond the i64 nanosecond range (1677-09-21 to 2262-04-11) there is no
+    // representation to saturate to; the encoder says so instead.
+    #[test]
+    fn ns_string_outside_the_ns_range_is_an_error() {
+        let after = DateTime::from_timestamp(10_000_000_000, 0).unwrap(); // year 2286
+        let before = DateTime::from_timestamp(-10_000_000_000, 0).unwrap(); // year 1653
+
+        assert!(to_ns_string(after).is_err());
+        assert!(to_ns_string(before).is_err());
     }
 
     #[test]

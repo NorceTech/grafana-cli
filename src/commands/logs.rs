@@ -88,17 +88,17 @@ impl LogsCmd {
 }
 
 /// Window bounds (ns strings) + the resolved Loki datasource for a query.
+/// The bounds are encoded before any datasource is fetched, so a window
+/// outside the representable range never reaches the instance.
 async fn loki_context(
     client: &GrafanaClient,
     window: Windowed<'_, QueryWindow>,
 ) -> Result<(String, String, Datasource)> {
+    let start = to_ns_string(window.bounds.start)?;
+    let end = to_ns_string(window.bounds.end)?;
     let all = client.datasources().await?;
     let ds = datasource::resolve(&all, Kind::Loki, window.args.datasource.as_deref())?;
-    Ok((
-        to_ns_string(window.bounds.start),
-        to_ns_string(window.bounds.end),
-        ds.clone(),
-    ))
+    Ok((start, end, ds.clone()))
 }
 
 /// The names in a `labels` or `label/{label}/values` reply.
