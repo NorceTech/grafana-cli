@@ -133,13 +133,21 @@ impl Query {
             Self::Logs {
                 cmd: LogsCmd::LabelValues { label, .. },
             } => logs::validate_label_name(label),
+            Self::Metrics {
+                cmd: MetricsCmd::LabelValues(args),
+            } => logs::validate_label_name(&args.label),
             Self::Health
             | Self::Datasources(_)
             | Self::Logs {
                 cmd: LogsCmd::Search(_) | LogsCmd::Labels { .. },
             }
             | Self::Metrics {
-                cmd: MetricsCmd::Instant(_) | MetricsCmd::Range(_),
+                cmd:
+                    MetricsCmd::Instant(_)
+                    | MetricsCmd::Range(_)
+                    | MetricsCmd::Labels(_)
+                    | MetricsCmd::Series(_)
+                    | MetricsCmd::Exemplars(_),
             }
             | Self::Traces {
                 cmd: TracesCmd::Search(_),
@@ -160,6 +168,18 @@ impl Query {
             } => Some(window),
             Self::Metrics {
                 cmd: MetricsCmd::Range(args),
+            } => Some(&args.window),
+            Self::Metrics {
+                cmd: MetricsCmd::Labels(args),
+            } => Some(&args.window),
+            Self::Metrics {
+                cmd: MetricsCmd::LabelValues(args),
+            } => Some(&args.window),
+            Self::Metrics {
+                cmd: MetricsCmd::Series(args),
+            } => Some(&args.window),
+            Self::Metrics {
+                cmd: MetricsCmd::Exemplars(args),
             } => Some(&args.window),
             Self::Traces {
                 cmd: TracesCmd::Search(args),
