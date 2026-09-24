@@ -3,7 +3,7 @@ mod common;
 use chrono::SecondsFormat;
 use common::*;
 use serde_json::{Value, json};
-use wiremock::matchers::{method, path, query_param};
+use wiremock::matchers::{method, path, path_regex, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const FROM: &str = "2026-08-28T14:00:00Z";
@@ -243,11 +243,54 @@ async fn s6_metrics_range_empty_result_is_exit_0() {
     server.verify().await;
 }
 
-// An explicit --datasource of another type is queried anyway (VictoriaMetrics
-// and other Prometheus-compatible plugins have their own type), with one note
-// on stderr saying so.
+// An explicit --datasource of another core type (Loki for a metrics query) is
+// a config error naming both types, and nothing is proxied.
 #[tokio::test]
-async fn s6_metrics_wrong_type_datasource_is_queried_with_a_note() {
+async fn s6_metrics_other_core_type_datasource_is_a_config_error() {
+    let server = MockServer::start().await;
+    ds_mock().expect(1).mount(&server).await;
+    Mock::given(method("GET"))
+        .and(path_regex("^/api/datasources/proxy/"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(vector_body()))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let cfg = config(&server.uri());
+    let env = ("GCLI_CONFIG_DIR", cfg.path().to_str().unwrap());
+    // loki1 is the uid of the Loki datasource in ds_mock.
+    let out = spawn_gcli(
+        &["metrics", "instant", "up", "--datasource", "loki1"],
+        &[env],
+    );
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2), "stderr={stderr}");
+    assert!(
+        out.stdout.is_empty(),
+        "{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    let err: Value = serde_json::from_str(stderr.trim()).expect("one stderr JSON line");
+    assert_eq!(err["error"]["kind"], "config");
+    let message = err["error"]["message"].as_str().unwrap_or_default();
+    assert!(
+        message.contains("loki") && message.contains("prometheus"),
+        "{message}"
+    );
+    server.verify().await;
+    write_transcript(
+        "s6_metrics_other_core_type_datasource.txt",
+        "gcli metrics instant up --datasource loki1",
+        &out,
+    );
+}
+
+// An explicit --datasource of a plugin type (VictoriaMetrics and other
+// Prometheus-compatible plugins have their own) is queried anyway, with one
+// note on stderr saying so.
+#[tokio::test]
+async fn s6_metrics_plugin_datasource_is_queried_with_a_note() {
     let server = MockServer::start().await;
     datasources_json(json!([
         {"id": 1, "uid": "prom1", "name": "Prom", "type": "prometheus",
@@ -281,7 +324,7 @@ async fn s6_metrics_wrong_type_datasource_is_queried_with_a_note() {
     }
     server.verify().await;
     write_transcript(
-        "s6_metrics_wrong_type_datasource.txt",
+        "s6_metrics_plugin_datasource.txt",
         "gcli metrics instant up --datasource VM",
         &out,
     );

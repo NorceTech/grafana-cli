@@ -1,8 +1,9 @@
 use crate::client::Datasource;
 use crate::{Error, Result};
+use clap::ValueEnum;
 
 // The datasource types gcli queries; also the values of `datasources --type`.
-#[derive(clap::ValueEnum, Clone, Copy, Debug)]
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     Loki,
     Prometheus,
@@ -18,20 +19,37 @@ impl Kind {
             Self::Tempo => "tempo",
         }
     }
+
+    /// The kind whose Grafana `type` string is `ds_type`; `None` for plugins.
+    fn of_type(ds_type: &str) -> Option<Self> {
+        Self::value_variants()
+            .iter()
+            .copied()
+            .find(|kind| kind.as_str() == ds_type)
+    }
 }
 
-/// The stderr note for an explicit `--datasource` whose type is not `wanted`.
-/// gcli queries it anyway: Prometheus-compatible plugins (VictoriaMetrics,
-/// Amazon Managed Prometheus) have their own type but answer the same API.
-pub fn type_mismatch(ds: &Datasource, wanted: Kind) -> Option<String> {
-    (ds.r#type != wanted.as_str()).then(|| {
-        format!(
-            "note: datasource '{}' is type {}, expected {}; querying it anyway",
-            ds.name,
-            ds.r#type,
-            wanted.as_str()
-        )
-    })
+/// Whether an explicit `--datasource` of `ds.r#type` may serve a `wanted`
+/// query. Its own type passes silently; another core type (a Loki datasource
+/// for a metrics query) is a config error. Any other type is a plugin, which
+/// gcli queries anyway with the returned stderr note: Prometheus-compatible
+/// plugins (VictoriaMetrics, Amazon Managed Prometheus) have their own type
+/// but answer the same API.
+pub fn check_type(ds: &Datasource, wanted: Kind) -> Result<Option<String>> {
+    let expected = wanted.as_str();
+    match Kind::of_type(&ds.r#type) {
+        Some(kind) if kind == wanted => Ok(None),
+        Some(_) => Err(Error::Config {
+            message: format!(
+                "datasource '{}' is type {}, expected {expected}; see gcli datasources --type {expected}",
+                ds.name, ds.r#type
+            ),
+        }),
+        None => Ok(Some(format!(
+            "note: datasource '{}' is type {}, expected {expected}; querying it anyway",
+            ds.name, ds.r#type
+        ))),
+    }
 }
 
 pub fn resolve<'a>(
@@ -46,7 +64,7 @@ pub fn resolve<'a>(
             .ok_or_else(|| Error::Config {
                 message: format!("datasource '{flag}' not found"),
             })?;
-        if let Some(note) = type_mismatch(ds, kind) {
+        if let Some(note) = check_type(ds, kind)? {
             eprintln!("{note}");
         }
         return Ok(ds);
@@ -187,28 +205,44 @@ mod tests {
             "u-loki2"
         );
         assert_eq!(
-            resolve(&all, Kind::Loki, Some("Prom")).unwrap().uid,
+            resolve(&all, Kind::Prometheus, Some("Prom")).unwrap().uid,
             "u-prom"
         );
     }
 
     #[test]
-    fn type_mismatch_notes_a_datasource_of_another_type() {
+    fn check_type_passes_the_wanted_type_silently() {
+        let prom = ds(3, "u-prom", "Prom", "prometheus", false);
+
+        let note = check_type(&prom, Kind::Prometheus).unwrap();
+
+        assert_eq!(note, None);
+    }
+
+    #[test]
+    fn check_type_rejects_another_core_type_naming_both() {
+        let loki = ds(1, "u-loki", "Loki main", "loki", true);
+
+        let err = check_type(&loki, Kind::Prometheus).unwrap_err();
+
+        assert!(
+            matches!(&err, Error::Config { message }
+                if message.contains("loki") && message.contains("prometheus")),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn check_type_notes_a_plugin_type() {
+        // Prometheus-compatible, but its own plugin type.
         let vm = ds(5, "u-vm", "VM", "victoriametrics-metrics-datasource", false);
 
-        let note = type_mismatch(&vm, Kind::Prometheus).expect("a note");
+        let note = check_type(&vm, Kind::Prometheus).unwrap().expect("a note");
 
         assert!(note.starts_with("note: "), "{note}");
         for fact in ["'VM'", "victoriametrics-metrics-datasource", "prometheus"] {
             assert!(note.contains(fact), "{fact} missing: {note}");
         }
-    }
-
-    #[test]
-    fn type_mismatch_is_none_for_the_wanted_type() {
-        let prom = ds(3, "u-prom", "Prom", "prometheus", false);
-
-        assert_eq!(type_mismatch(&prom, Kind::Prometheus), None);
     }
 
     #[test]
