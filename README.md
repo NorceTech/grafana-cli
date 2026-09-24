@@ -83,7 +83,7 @@ The `GRAFANA_CLI_URL`, `GRAFANA_CLI_TOKEN`, `GRAFANA_CLI_USERNAME` and `GRAFANA_
 
 **Directories.** `GCLI_CONFIG_DIR` overrides where `config.toml` is read and written. `GCLI_CACHE_DIR` overrides where the OAuth token cache (`tokens.json`) lives; the default is the platform cache directory (`~/.cache/grafana-cli` on Linux, `~/Library/Caches/grafana-cli` on macOS).
 
-**Security.** Prefer the `*_command` variants (`token_command`, `password_command`, `client_secret_command`) over plaintext secrets. The command runs at request time and its trimmed stdout becomes the secret, so credentials can come from a password manager, a file or an agent instead of the config file. A single-element command is a shell line run through `sh -c`, so `~` expansion and pipes work; an array of two or more elements is executed directly as argv, without a shell, so elements containing spaces (like `op://vault/Grafana Prod/token`) survive intact. Note that this also means anyone who can edit your config file can run arbitrary commands as you; that is by design and scoped to your own machine.
+**Security.** Prefer the `*_command` variants (`token_command`, `password_command`, `client_secret_command`) over plaintext secrets. The command runs at request time and its trimmed stdout becomes the secret, so credentials can come from a password manager, a file or an agent instead of the config file. A single-element command is a shell line run through `sh -c`, so `~` expansion and pipes work; an array of two or more elements is executed directly as argv, without a shell, so elements containing spaces (like `op://vault/Grafana Prod/token`) survive intact. Anywhere a secret is passed as a flag value — the global `--token` and `--password`, `profile add --token`/`--password`/`--client-secret`, `profile set-token --token` — a value of `-` instead reads the secret from stdin (trimmed, non-empty, never a prompt), keeping it out of `ps` output and shell history. Note that this also means anyone who can edit your config file can run arbitrary commands as you; that is by design and scoped to your own machine.
 
 ## Profiles
 
@@ -440,6 +440,7 @@ This CLI is designed to be driven by tools like you. The guarantees:
 - **Notes on stderr.** Besides the JSON error lines, stderr can carry plain-text `note: ...` lines that do not change the result, for example when `--datasource` names a plugin datasource instead of a core `loki`, `prometheus` or `tempo` one (gcli still queries it: Prometheus-compatible plugins such as VictoriaMetrics have their own type). Treat only the lines that parse as JSON as errors.
 - **Meaningful exit codes.** 0 ok (including partial multi-profile success), 1 upstream or transport failure (`http`, `response`, `io`, `url`), 2 bad invocation (config/auth/datasource).
 - **Auto JSON.** Piping the output selects JSON mode without extra flags, but prefer explicit `--output json` for determinism.
+- **Bounded and secret-safe.** Every request and `*_command` helper is bounded by `--timeout` (default 60s), and any secret flag accepts `-` to read the secret from stdin, so nothing hangs and no secret needs to appear in a process listing.
 
 Suggested discovery workflow, from unknown instance to first result:
 

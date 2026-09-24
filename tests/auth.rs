@@ -299,6 +299,79 @@ async fn s24_multi_element_token_command_runs_as_argv() {
     );
 }
 
+// A secret flag value of `-` reads the secret from stdin (trimmed), so it
+// never appears in `ps` output or shell history: --token - sends the piped
+// value as the bearer header.
+#[tokio::test]
+async fn s26_global_token_dash_reads_stdin() {
+    let server = wiremock::MockServer::start().await;
+    health_auth_mock("Bearer stdin-tok")
+        .expect(1)
+        .mount(&server)
+        .await;
+    let config = token_config(&server.uri());
+    let cache = tempfile::tempdir().unwrap();
+
+    let out = spawn_gcli_with_stdin(
+        &["--token", "-", "health"],
+        &envs(&config, &cache),
+        "stdin-tok\n",
+    );
+
+    assert!(
+        out.status.success(),
+        "exit={:?} stdout={} stderr={}",
+        out.status.code(),
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    server.verify().await;
+    write_transcript(
+        "s26_token_dash.txt",
+        "echo stdin-tok | gcli --token - health",
+        &out,
+    );
+}
+
+// The same convention for --password: the piped value completes the basic
+// credentials.
+#[tokio::test]
+async fn s27_global_password_dash_reads_stdin() {
+    let server = wiremock::MockServer::start().await;
+    health_auth_mock("Basic dTpzdGQtcHc=")
+        .expect(1)
+        .mount(&server)
+        .await;
+    let config = fixture_config(&format!(
+        "current_profile = \"p\"\n\
+         [profiles.p]\n\
+         url = \"{}\"\n\
+         username = \"u\"\n\
+         password = \"file-pw\"\n",
+        server.uri()
+    ));
+    let cache = tempfile::tempdir().unwrap();
+
+    let out = spawn_gcli_with_stdin(
+        &["--password", "-", "health"],
+        &envs(&config, &cache),
+        "  std-pw \n",
+    );
+
+    assert!(
+        out.status.success(),
+        "exit={:?} stderr={}",
+        out.status.code(),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    server.verify().await;
+    write_transcript(
+        "s27_password_dash.txt",
+        "echo '  std-pw ' | gcli --password - health",
+        &out,
+    );
+}
+
 // GRAFANA_CLI_PROFILE beats current_profile, and GRAFANA_CLI_URL, _USERNAME and
 // _PASSWORD replace the selected profile's url and basic credentials. Both file
 // urls are dead, so only the env url can reach the mock, and only as u:p.

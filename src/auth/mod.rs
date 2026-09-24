@@ -14,6 +14,22 @@ use crate::{Result, error::Error};
 use std::path::Path;
 use std::time::Duration;
 
+/// Reads a secret given as `-` on a secret flag from `input`: everything up
+/// to EOF, trimmed, and it must be non-empty after trimming. `flag` names the
+/// flag in errors. The caller owns the reader, so tests feed a `Cursor` and
+/// the binary feeds stdin.
+pub fn secret_from_stdin(input: &mut impl std::io::Read, flag: &str) -> Result<String> {
+    let mut raw = String::new();
+    input.read_to_string(&mut raw)?;
+    let secret = raw.trim();
+    if secret.is_empty() {
+        return Err(Error::Config {
+            message: format!("{flag} was given '-' but stdin is empty"),
+        });
+    }
+    Ok(secret.to_string())
+}
+
 #[derive(Debug, Clone)]
 pub enum AuthProvider {
     Token(String),
@@ -208,5 +224,22 @@ mod tests {
             from_profile("p", &p, None, TIMEOUT).await,
             Err(Error::Config { .. })
         ));
+    }
+
+    fn stdin_secret(input: &str) -> Result<String> {
+        secret_from_stdin(&mut std::io::Cursor::new(input), "--token")
+    }
+
+    #[test]
+    fn stdin_secret_is_trimmed() {
+        assert_eq!(stdin_secret("  tok \n").unwrap(), "tok");
+    }
+
+    #[test]
+    fn stdin_secret_must_be_non_empty() {
+        for input in ["", "\n", "  \t "] {
+            let e = stdin_secret(input).unwrap_err();
+            assert!(matches!(e, Error::Config { .. }), "{input:?}: {e:?}");
+        }
     }
 }

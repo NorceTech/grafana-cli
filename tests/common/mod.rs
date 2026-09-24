@@ -43,6 +43,27 @@ pub fn spawn_gcli(args: &[&str], envs: &[(&str, &str)]) -> std::process::Output 
         .expect("failed to spawn gcli")
 }
 
+/// `spawn_gcli` with `stdin` piped into the binary, for the secret flags that
+/// read their value from stdin when given `-`. The pipe is closed before
+/// waiting, so the child sees EOF; its stdout/stderr are captured as usual.
+pub fn spawn_gcli_with_stdin(
+    args: &[&str],
+    envs: &[(&str, &str)],
+    stdin: &str,
+) -> std::process::Output {
+    use std::io::Write;
+    let mut child = gcli_command(args, envs)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to spawn gcli");
+    let mut pipe = child.stdin.take().expect("piped stdin");
+    pipe.write_all(stdin.as_bytes()).expect("write stdin");
+    drop(pipe);
+    child.wait_with_output().expect("failed to run gcli")
+}
+
 /// Config with one token-auth profile "p" pointing at `base_url`.
 pub fn token_config(base_url: &str) -> tempfile::TempDir {
     fixture_config(&format!(

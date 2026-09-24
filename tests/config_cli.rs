@@ -201,6 +201,108 @@ fn s1_profile_errors() {
     assert!(!dir2.path().join("config.toml").exists());
 }
 
+// A secret flag value of `-` reads the secret from stdin, so a profile's
+// token never appears on the command line: the piped value, trimmed, is what
+// lands in config.toml.
+#[test]
+fn s28_profile_add_token_dash_reads_stdin() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = spawn_gcli_with_stdin(
+        &["profile", "add", "p", "--url", "http://x", "--token", "-"],
+        &config_env(&dir),
+        "glsa_from_stdin\n",
+    );
+
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        load_config(&dir).profiles["p"].token.as_deref(),
+        Some("glsa_from_stdin")
+    );
+    write_transcript(
+        "s28_add_token_dash.txt",
+        "echo glsa_from_stdin | gcli profile add p --url http://x --token -",
+        &out,
+    );
+}
+
+#[test]
+fn s29_set_token_dash_reads_stdin() {
+    let dir = fixture_config(&two_profile_toml());
+
+    let out = spawn_gcli_with_stdin(
+        &["profile", "set-token", "primary", "--token", "-"],
+        &config_env(&dir),
+        "rotated-from-stdin\n",
+    );
+
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        load_config(&dir).profiles["primary"].token.as_deref(),
+        Some("rotated-from-stdin")
+    );
+    write_transcript(
+        "s29_set_token_dash.txt",
+        "echo rotated-from-stdin | gcli profile set-token primary --token -",
+        &out,
+    );
+}
+
+// The convention covers the OAuth client secret too: profile add stores the
+// piped value in the oauth table.
+#[test]
+fn s30_profile_add_client_secret_dash_reads_stdin() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = spawn_gcli_with_stdin(
+        &[
+            "profile",
+            "add",
+            "oauthp",
+            "--url",
+            "https://g.example.com",
+            "--token-url",
+            "https://idp/token",
+            "--client-id",
+            "cid",
+            "--client-secret",
+            "-",
+        ],
+        &config_env(&dir),
+        "s3cret-from-stdin\n",
+    );
+
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let cfg = load_config(&dir);
+    let oauth = cfg
+        .profiles
+        .get("oauthp")
+        .expect("profile oauthp on disk")
+        .oauth
+        .as_ref()
+        .expect("oauth config on disk");
+    assert_eq!(oauth.client_secret.as_deref(), Some("s3cret-from-stdin"));
+    write_transcript(
+        "s30_add_client_secret_dash.txt",
+        "echo s3cret-from-stdin | gcli profile add oauthp --url https://g.example.com \\
+  --token-url https://idp/token --client-id cid --client-secret -",
+        &out,
+    );
+}
+
 // A profile url that is not an absolute http(s) address would only surface
 // later as a reqwest builder error; profile add rejects it as kind url, exit
 // 1, and saves nothing.

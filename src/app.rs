@@ -15,7 +15,7 @@ use crate::render::{fail, print_output, print_results, write_stdout};
 use gcli_lib::error::Error;
 use std::time::Duration;
 
-pub(crate) async fn run(cli: Cli) -> i32 {
+pub(crate) async fn run(mut cli: Cli) -> i32 {
     // The one place --timeout is parsed: every request and every secret
     // helper command below gets this budget.
     let timeout = match humantime::parse_duration(&cli.timeout) {
@@ -29,6 +29,11 @@ pub(crate) async fn run(cli: Cli) -> i32 {
             );
         }
     };
+    // Secret flags given '-' read the secret from stdin here, once, before
+    // any command runs; everything downstream sees the real value.
+    if let Err(e) = resolve_stdin_secrets(&mut cli) {
+        return fail(None, &e);
+    }
     // Lazy: completions output ignores --output.
     let mode = || resolve_output(cli.output, std::io::stdout().is_terminal());
     // The only read of the process environment: everything below gets values.
@@ -49,6 +54,52 @@ pub(crate) async fn run(cli: Cli) -> i32 {
         Commands::Profile { cmd } => profile_command(cmd, mode(), &env),
         Commands::Query(query) => dispatch(&cli, mode(), query, env, timeout).await,
     }
+}
+
+/// Replaces every secret flag given as `-` with the secret read from stdin,
+/// so a secret can be piped in instead of appearing in `ps` output or shell
+/// history. Never prompts: stdin is read to EOF, whatever it holds.
+/// `profile add` and `profile set-token` own their secret flags — clap
+/// mirrors them onto the global fields, so they are resolved instead of (not
+/// in addition to) the globals, and stdin is read once.
+fn resolve_stdin_secrets(cli: &mut Cli) -> gcli_lib::Result<()> {
+    let mut read_globals = false;
+    match &mut cli.command {
+        Commands::Profile { cmd } => match cmd {
+            ProfileCmd::Add { args } => {
+                read_secret(&mut args.token, "profile add --token")?;
+                read_secret(&mut args.password, "profile add --password")?;
+                read_secret(&mut args.client_secret, "profile add --client-secret")?;
+            }
+            ProfileCmd::SetToken { token, .. } => {
+                if token == "-" {
+                    *token = gcli_lib::auth::secret_from_stdin(
+                        &mut std::io::stdin(),
+                        "profile set-token --token",
+                    )?;
+                }
+            }
+            ProfileCmd::List | ProfileCmd::Use { .. } | ProfileCmd::Remove { .. } => {
+                read_globals = true;
+            }
+        },
+        Commands::Query(_) | Commands::Completions { .. } => read_globals = true,
+    }
+    if read_globals {
+        read_secret(&mut cli.token, "--token")?;
+        read_secret(&mut cli.password, "--password")?;
+    }
+    Ok(())
+}
+
+fn read_secret(value: &mut Option<String>, flag: &str) -> gcli_lib::Result<()> {
+    if value.as_deref() == Some("-") {
+        *value = Some(gcli_lib::auth::secret_from_stdin(
+            &mut std::io::stdin(),
+            flag,
+        )?);
+    }
+    Ok(())
 }
 
 async fn dispatch(
