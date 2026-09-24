@@ -199,7 +199,7 @@ async fn s7_traces_404() {
     ds_mock().mount(&server).await;
     Mock::given(method("GET"))
         .and(path(
-            "/api/datasources/proxy/uid/tempo1/api/traces/missing1",
+            "/api/datasources/proxy/uid/tempo1/api/traces/deadbeef",
         ))
         .respond_with(
             ResponseTemplate::new(404).set_body_json(json!({"message": "trace not found"})),
@@ -210,11 +210,59 @@ async fn s7_traces_404() {
 
     let cfg = config(&server.uri());
     let env = ("GCLI_CONFIG_DIR", cfg.path().to_str().unwrap());
-    let out = spawn_gcli(&["traces", "get", "missing1"], &[env]);
+    let out = spawn_gcli(&["traces", "get", "deadbeef"], &[env]);
 
     assert_eq!(out.status.code(), Some(1), "expected exit 1");
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("trace not found"), "{stderr}");
     server.verify().await;
-    write_transcript("s7_traces_404.txt", "gcli traces get missing1", &out);
+    write_transcript("s7_traces_404.txt", "gcli traces get deadbeef", &out);
+}
+
+// The trace id becomes a path segment and reqwest resolves `..`, so an
+// unchecked id walks out of the Tempo proxy into Grafana's own API with the
+// profile's credentials. It is a config error naming the id, and Grafana
+// receives no request at all.
+#[tokio::test]
+async fn s7_traces_get_rejects_a_path_traversing_trace_id() {
+    const TRAVERSAL: &str = "../../../../../../../api/admin/users";
+    let server = MockServer::start().await;
+    ds_mock().mount(&server).await;
+    Mock::given(method("GET"))
+        .and(path("/api/admin/users"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([{"login": "admin"}])))
+        .mount(&server)
+        .await;
+
+    let cfg = config(&server.uri());
+    let env = ("GCLI_CONFIG_DIR", cfg.path().to_str().unwrap());
+    let out = spawn_gcli(&["traces", "get", TRAVERSAL], &[env]);
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "stdout={} stderr={stderr}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    let error: Value = serde_json::from_str(stderr.trim()).expect("stderr JSON");
+    assert_eq!(error["error"]["kind"], "config");
+    let message = error["error"]["message"].as_str().unwrap_or_default();
+    assert!(message.contains(TRAVERSAL), "{message}");
+    let requests: Vec<String> = server
+        .received_requests()
+        .await
+        .expect("request recording")
+        .iter()
+        .map(|request| request.url.to_string())
+        .collect();
+    assert!(
+        requests.is_empty(),
+        "requests reached Grafana: {requests:?}"
+    );
+    write_transcript(
+        "s7_traces_get_path_traversal.txt",
+        "gcli traces get '../../../../../../../api/admin/users'",
+        &out,
+    );
 }

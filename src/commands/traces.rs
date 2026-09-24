@@ -1,8 +1,8 @@
-use crate::Result;
 use crate::client::{Datasource, GrafanaClient};
 use crate::commands::{Bounds, CommandOutput, QueryWindow, Windowed};
 use crate::datasource::{self, Kind};
 use crate::output::OutputMode;
+use crate::{Error, Result};
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::{Value, json};
 
@@ -63,6 +63,19 @@ fn nanos_to_rfc3339(s: &str) -> Option<String> {
         ns.rem_euclid(1_000_000_000) as u32,
     )
     .map(|dt| dt.to_rfc3339_opts(SecondsFormat::Millis, true))
+}
+
+/// Rejects a trace id Tempo would not accept, 1 to 32 hex digits, before it
+/// becomes a segment of `api/traces/{id}`: reqwest resolves `..` in a URL, so
+/// an unchecked id walks out of the datasource proxy into any Grafana API,
+/// sent with the profile's credentials.
+pub(crate) fn validate_trace_id(id: &str) -> Result<()> {
+    if (1..=32).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Ok(());
+    }
+    Err(Error::Config {
+        message: format!("invalid trace id: '{id}' (expected 1 to 32 hex digits)"),
+    })
 }
 
 pub async fn get(
@@ -214,6 +227,30 @@ pub async fn search(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn trace_ids_of_1_to_32_hex_digits_are_valid() {
+        for id in ["a", "abc123", "0123456789abcdefABCDEF0123456789"] {
+            let result = validate_trace_id(id);
+
+            assert!(result.is_ok(), "{id}: {result:?}");
+        }
+    }
+
+    #[test]
+    fn other_trace_ids_are_config_errors_naming_the_id() {
+        let too_long = "a".repeat(33);
+        for id in [
+            "", &too_long, "xyz", "abc/123", "..", "%2e%2e", "abc 123", "\u{e9}",
+        ] {
+            let result = validate_trace_id(id);
+
+            assert!(
+                matches!(&result, Err(Error::Config { message }) if message.contains(&format!("'{id}'"))),
+                "{id}: {result:?}"
+            );
+        }
+    }
 
     #[test]
     fn nanos_string_to_rfc3339_millis() {

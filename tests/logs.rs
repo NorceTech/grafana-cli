@@ -70,6 +70,35 @@ fn stdout_lines(out: &std::process::Output) -> Vec<Value> {
         .collect()
 }
 
+// A run rejected before any profile queries: one config error naming `value`.
+fn assert_config_error_naming(out: &std::process::Output, value: &str) {
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "stdout={} stderr={stderr}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    let error: Value = serde_json::from_str(stderr.trim()).expect("stderr JSON");
+    assert_eq!(error["error"]["kind"], "config");
+    let message = error["error"]["message"].as_str().unwrap_or_default();
+    assert!(message.contains(value), "{message}");
+}
+
+async fn assert_no_requests(server: &MockServer) {
+    let requests: Vec<String> = server
+        .received_requests()
+        .await
+        .expect("request recording")
+        .iter()
+        .map(|request| request.url.to_string())
+        .collect();
+    assert!(
+        requests.is_empty(),
+        "requests reached Grafana: {requests:?}"
+    );
+}
+
 fn assert_search_records(records: &[Value]) {
     assert_eq!(records.len(), 4, "{records:?}");
     let expected = [
@@ -390,6 +419,43 @@ async fn s5_logs_label_values() {
     write_transcript(
         "s5_logs_label_values.txt",
         "gcli logs label-values app --from 2026-08-28T14:00:00Z --to 2026-08-28T15:00:00Z",
+        &out,
+    );
+}
+
+// The label becomes a path segment of label/{label}/values; `..` walks out of
+// the Loki proxy and `?` turns the rest into a query string. Only Loki label
+// names reach the path: this one is a config error and no request is made.
+#[tokio::test]
+async fn s5_logs_label_values_rejects_a_path_traversing_label() {
+    const TRAVERSAL: &str = "../../../../../../../../../api/admin/users?";
+    let server = MockServer::start().await;
+    loki_datasources_mock().mount(&server).await;
+    Mock::given(method("GET"))
+        .and(path("/api/admin/users"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([{"login": "admin"}])))
+        .mount(&server)
+        .await;
+    let config = token_config(&server.uri());
+
+    let out = run_logs(
+        &config,
+        &[
+            "logs",
+            "label-values",
+            TRAVERSAL,
+            "--from",
+            FROM,
+            "--to",
+            TO,
+        ],
+    );
+
+    assert_config_error_naming(&out, TRAVERSAL);
+    assert_no_requests(&server).await;
+    write_transcript(
+        "s5_logs_label_values_path_traversal.txt",
+        "gcli logs label-values '../../../../../../../../../api/admin/users?' --from 2026-08-28T14:00:00Z --to 2026-08-28T15:00:00Z",
         &out,
     );
 }

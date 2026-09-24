@@ -84,10 +84,12 @@ pub enum Query {
 }
 
 impl Query {
-    /// Resolves the time window once, before fanout: a bad `--since`,
-    /// `--from` or `--to` is one config error instead of one per profile, and
-    /// every profile queries the same bounds.
+    /// Resolves the invocation once, before fanout: a bad `--since`, `--from`
+    /// or `--to`, or a trace id or label name unfit for a proxy path, is one
+    /// config error instead of one per profile, and every profile queries the
+    /// same bounds.
     pub fn resolve(&self) -> Result<Resolved> {
+        self.validate_path_args()?;
         let window = self.window();
         let (start, end) = resolve_window(
             window.and_then(|w| w.since.as_deref()),
@@ -98,6 +100,32 @@ impl Query {
             query: self.clone(),
             bounds: Bounds { start, end },
         })
+    }
+
+    /// Checks the arguments that become segments of a proxy path.
+    fn validate_path_args(&self) -> Result<()> {
+        use logs::LogsCmd;
+        use metrics::MetricsCmd;
+        use traces::TracesCmd;
+        match self {
+            Self::Traces {
+                cmd: TracesCmd::Get(args),
+            } => traces::validate_trace_id(&args.trace_id),
+            Self::Logs {
+                cmd: LogsCmd::LabelValues { label, .. },
+            } => logs::validate_label_name(label),
+            Self::Health
+            | Self::Datasources(_)
+            | Self::Logs {
+                cmd: LogsCmd::Search(_) | LogsCmd::Labels { .. },
+            }
+            | Self::Metrics {
+                cmd: MetricsCmd::Instant(_) | MetricsCmd::Range(_),
+            }
+            | Self::Traces {
+                cmd: TracesCmd::Search(_),
+            } => Ok(()),
+        }
     }
 
     fn window(&self) -> Option<&QueryWindow> {
@@ -169,6 +197,45 @@ mod tests {
                     to: None,
                     datasource: None,
                 },
+            },
+        };
+
+        let result = query.resolve();
+
+        assert!(matches!(result, Err(Error::Config { .. })), "{result:?}");
+    }
+
+    fn no_window() -> QueryWindow {
+        QueryWindow {
+            since: None,
+            from: None,
+            to: None,
+            datasource: None,
+        }
+    }
+
+    // Path-bound arguments are checked with the window, before fanout: one
+    // config error however many profiles are selected.
+    #[test]
+    fn path_traversing_trace_id_is_a_config_error() {
+        let query = Query::Traces {
+            cmd: traces::TracesCmd::Get(traces::GetArgs {
+                trace_id: "../../api/admin/users".into(),
+                datasource: None,
+            }),
+        };
+
+        let result = query.resolve();
+
+        assert!(matches!(result, Err(Error::Config { .. })), "{result:?}");
+    }
+
+    #[test]
+    fn path_traversing_label_name_is_a_config_error() {
+        let query = Query::Logs {
+            cmd: logs::LogsCmd::LabelValues {
+                label: "../../api/admin/users".into(),
+                window: no_window(),
             },
         };
 

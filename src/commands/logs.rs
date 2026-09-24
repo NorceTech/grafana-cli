@@ -1,9 +1,9 @@
-use crate::Result;
 use crate::client::{Datasource, GrafanaClient, Reply};
 use crate::commands::{Bounds, CommandOutput, QueryWindow, Windowed, success_data};
 use crate::datasource::{self, Kind};
 use crate::output::{LogRecord, OutputMode};
 use crate::timeutil::to_ns_string;
+use crate::{Error, Result};
 use chrono::{DateTime, SecondsFormat};
 use serde::Deserialize;
 use serde_json::Value;
@@ -227,6 +227,23 @@ pub async fn labels(
     )?)))
 }
 
+/// Rejects a label name Loki would not accept, `[A-Za-z_][A-Za-z0-9_]*`,
+/// before it becomes a segment of `label/{label}/values`; see
+/// `traces::validate_trace_id` for why.
+pub(crate) fn validate_label_name(label: &str) -> Result<()> {
+    let mut bytes = label.bytes();
+    let valid = bytes
+        .next()
+        .is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
+        && bytes.all(|b| b.is_ascii_alphanumeric() || b == b'_');
+    if valid {
+        return Ok(());
+    }
+    Err(Error::Config {
+        message: format!("invalid label name: '{label}' (expected [A-Za-z_][A-Za-z0-9_]*)"),
+    })
+}
+
 pub async fn label_values(
     client: &GrafanaClient,
     _profile: &str,
@@ -249,11 +266,39 @@ pub async fn label_values(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Error;
     use serde_json::json;
 
     fn records(body: Value) -> Result<Vec<LogRecord>> {
         log_records(&Reply::ok(body), "p", "Loki")
+    }
+
+    #[test]
+    fn loki_label_names_are_valid() {
+        for label in ["job", "_", "__name__", "Job_9"] {
+            let result = validate_label_name(label);
+
+            assert!(result.is_ok(), "{label}: {result:?}");
+        }
+    }
+
+    #[test]
+    fn other_label_names_are_config_errors_naming_the_label() {
+        for label in [
+            "",
+            "9job",
+            "service.name",
+            "a-b",
+            "job/../x",
+            "job?",
+            "j\u{f6}b",
+        ] {
+            let result = validate_label_name(label);
+
+            assert!(
+                matches!(&result, Err(Error::Config { message }) if message.contains(&format!("'{label}'"))),
+                "{label}: {result:?}"
+            );
+        }
     }
 
     fn streams(result: Value) -> Value {
