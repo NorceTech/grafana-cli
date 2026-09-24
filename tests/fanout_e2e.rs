@@ -28,14 +28,6 @@ async fn health_500(server: &MockServer) {
         .await;
 }
 
-fn stdout_lines(out: &std::process::Output) -> Vec<Value> {
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .map(|l| serde_json::from_str(l).expect("stdout line is JSON"))
-        .collect()
-}
-
 fn stderr_lines(out: &std::process::Output) -> Vec<Value> {
     String::from_utf8_lossy(&out.stderr)
         .lines()

@@ -3,15 +3,6 @@ mod common;
 use common::*;
 use serde_json::{Value, json};
 
-fn token_config_toml(base: &str) -> String {
-    format!(
-        "current_profile = \"p\"\n\
-         [profiles.p]\n\
-         url = \"{base}\"\n\
-         token = \"t\"\n"
-    )
-}
-
 fn three_datasources() -> Value {
     json!([
         {"id": 1, "uid": "u-loki", "name": "Loki main", "type": "loki",
@@ -31,7 +22,7 @@ fn stdout_json(out: &std::process::Output) -> Value {
 async fn s2_health_json() {
     let server = wiremock::MockServer::start().await;
     health_auth_mock("Bearer t").expect(1).mount(&server).await;
-    let config = fixture_config(&token_config_toml(&server.uri()));
+    let config = token_config(&server.uri());
 
     let out = spawn_gcli(
         &["health"],
@@ -57,7 +48,7 @@ async fn s3_datasources_lists_all() {
         .expect(1)
         .mount(&server)
         .await;
-    let config = fixture_config(&token_config_toml(&server.uri()));
+    let config = token_config(&server.uri());
 
     let out = spawn_gcli(
         &["datasources"],
@@ -98,7 +89,7 @@ async fn s3_datasources_type_filter() {
         .expect(1)
         .mount(&server)
         .await;
-    let config = fixture_config(&token_config_toml(&server.uri()));
+    let config = token_config(&server.uri());
 
     let out = spawn_gcli(
         &["datasources", "--type", "loki"],
@@ -131,7 +122,7 @@ async fn s3_datasources_table_output() {
         .expect(1)
         .mount(&server)
         .await;
-    let config = fixture_config(&token_config_toml(&server.uri()));
+    let config = token_config(&server.uri());
 
     let out = spawn_gcli(
         &["datasources", "--output", "table"],

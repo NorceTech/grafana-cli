@@ -24,12 +24,6 @@ fn ts_ns(rfc3339: &str) -> String {
     gcli_lib::timeutil::to_ns_string(dt.with_timezone(&chrono::Utc)).expect("ts ns")
 }
 
-fn token_config(base: &str) -> tempfile::TempDir {
-    fixture_config(&format!(
-        "current_profile = \"p\"\n[profiles.p]\nurl = \"{base}\"\ntoken = \"t\"\n"
-    ))
-}
-
 fn loki_datasources_mock() -> Mock {
     datasources_json(json!([{
         "id": 1, "uid": "loki1", "name": "Loki", "type": "loki",
@@ -60,14 +54,6 @@ fn run_logs(config: &tempfile::TempDir, args: &[&str]) -> std::process::Output {
         args,
         &[("GCLI_CONFIG_DIR", config.path().to_str().unwrap())],
     )
-}
-
-fn stdout_lines(out: &std::process::Output) -> Vec<Value> {
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    stdout
-        .lines()
-        .map(|l| serde_json::from_str(l).expect("stdout line is JSON"))
-        .collect()
 }
 
 // A run rejected before any profile queries: one config error naming `value`.

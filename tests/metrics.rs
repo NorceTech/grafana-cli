@@ -17,15 +17,6 @@ fn epoch_secs(rfc3339: &str) -> String {
     format!("{}", gcli_lib::timeutil::to_epoch_secs(dt))
 }
 
-fn config(base: &str) -> tempfile::TempDir {
-    fixture_config(&format!(
-        "current_profile = \"p\"\n\
-         [profiles.p]\n\
-         url = \"{base}\"\n\
-         token = \"t\"\n"
-    ))
-}
-
 fn ds_mock() -> Mock {
     // prom1 is the only prometheus ds (and default) despite a loki sibling.
     datasources_json(json!([
@@ -89,7 +80,7 @@ async fn s6_metrics_instant() {
         .mount(&server)
         .await;
 
-    let cfg = config(&server.uri());
+    let cfg = token_config(&server.uri());
     let env = ("GCLI_CONFIG_DIR", cfg.path().to_str().unwrap());
     let out = spawn_gcli(&["metrics", "instant", "up"], &[env]);
 
@@ -129,7 +120,7 @@ async fn s6_metrics_instant_at() {
         .mount(&server)
         .await;
 
-    let cfg = config(&server.uri());
+    let cfg = token_config(&server.uri());
     let env = ("GCLI_CONFIG_DIR", cfg.path().to_str().unwrap());
     let out = spawn_gcli(&["metrics", "instant", "up", "--at", at], &[env]);
 
@@ -162,7 +153,7 @@ async fn s6_metrics_range() {
         .mount(&server)
         .await;
 
-    let cfg = config(&server.uri());
+    let cfg = token_config(&server.uri());
     let env = ("GCLI_CONFIG_DIR", cfg.path().to_str().unwrap());
     let out = spawn_gcli(
         &["metrics", "range", "up", "--from", FROM, "--to", TO],
@@ -197,7 +188,7 @@ async fn s6_metrics_range_step() {
         .mount(&server)
         .await;
 
-    let cfg = config(&server.uri());
+    let cfg = token_config(&server.uri());
     let env = ("GCLI_CONFIG_DIR", cfg.path().to_str().unwrap());
     let out = spawn_gcli(
         &[
@@ -231,7 +222,7 @@ async fn s6_metrics_range_empty_result_is_exit_0() {
         .mount(&server)
         .await;
 
-    let cfg = config(&server.uri());
+    let cfg = token_config(&server.uri());
     let env = ("GCLI_CONFIG_DIR", cfg.path().to_str().unwrap());
     let out = spawn_gcli(
         &["metrics", "range", "up", "--from", FROM, "--to", TO],
@@ -256,7 +247,7 @@ async fn s6_metrics_other_core_type_datasource_is_a_config_error() {
         .mount(&server)
         .await;
 
-    let cfg = config(&server.uri());
+    let cfg = token_config(&server.uri());
     let env = ("GCLI_CONFIG_DIR", cfg.path().to_str().unwrap());
     // loki1 is the uid of the Loki datasource in ds_mock.
     let out = spawn_gcli(
@@ -308,7 +299,7 @@ async fn s6_metrics_plugin_datasource_is_queried_with_a_note() {
         .mount(&server)
         .await;
 
-    let cfg = config(&server.uri());
+    let cfg = token_config(&server.uri());
     let env = ("GCLI_CONFIG_DIR", cfg.path().to_str().unwrap());
     let out = spawn_gcli(&["metrics", "instant", "up", "--datasource", "VM"], &[env]);
 

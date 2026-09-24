@@ -17,15 +17,6 @@ fn epoch_secs(rfc3339: &str) -> i64 {
         .timestamp()
 }
 
-fn config(base: &str) -> tempfile::TempDir {
-    fixture_config(&format!(
-        "current_profile = \"p\"\n\
-         [profiles.p]\n\
-         url = \"{base}\"\n\
-         token = \"t\"\n"
-    ))
-}
-
 fn ds_mock() -> Mock {
     datasources_json(json!([
         {"id": 1, "uid": "tempo1", "name": "Tempo", "type": "tempo",
@@ -102,7 +93,7 @@ async fn s7_traces_get() {
         .mount(&server)
         .await;
 
-    let cfg = config(&server.uri());
+    let cfg = token_config(&server.uri());
     let env = ("GCLI_CONFIG_DIR", cfg.path().to_str().unwrap());
     let out = spawn_gcli(&["traces", "get", "abc123"], &[env]);
 
@@ -132,7 +123,7 @@ async fn s7_traces_search() {
         .mount(&server)
         .await;
 
-    let cfg = config(&server.uri());
+    let cfg = token_config(&server.uri());
     let env = ("GCLI_CONFIG_DIR", cfg.path().to_str().unwrap());
     let out = spawn_gcli(
         &[
@@ -173,7 +164,7 @@ async fn s7_traces_search_subsecond_bounds_send_whole_seconds() {
         .mount(&server)
         .await;
 
-    let cfg = config(&server.uri());
+    let cfg = token_config(&server.uri());
     let env = ("GCLI_CONFIG_DIR", cfg.path().to_str().unwrap());
     let out = spawn_gcli(
         &[
@@ -208,7 +199,7 @@ async fn s7_traces_404() {
         .mount(&server)
         .await;
 
-    let cfg = config(&server.uri());
+    let cfg = token_config(&server.uri());
     let env = ("GCLI_CONFIG_DIR", cfg.path().to_str().unwrap());
     let out = spawn_gcli(&["traces", "get", "deadbeef"], &[env]);
 
@@ -234,7 +225,7 @@ async fn s7_traces_get_rejects_a_path_traversing_trace_id() {
         .mount(&server)
         .await;
 
-    let cfg = config(&server.uri());
+    let cfg = token_config(&server.uri());
     let env = ("GCLI_CONFIG_DIR", cfg.path().to_str().unwrap());
     let out = spawn_gcli(&["traces", "get", TRAVERSAL], &[env]);
 

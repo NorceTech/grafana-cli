@@ -1,36 +1,22 @@
 mod common;
 
 use common::*;
-use std::process::Command;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 // Raw `bash -c` spawn so we can observe PIPESTATUS[0] of the gcli process in a
-// `gcli ... | head` pipeline. Kept local to this file (common/mod.rs is frozen).
+// `gcli ... | head` pipeline. Same env scrub as every other spawn.
 fn bash_pipe(script_body: &str, envs: &[(&str, &str)]) -> std::process::Output {
     let bin = env!("CARGO_BIN_EXE_gcli");
     // `head -c 1` closes the read end after one byte; exit with gcli's status.
     let script = format!("'{bin}' {script_body} | head -c 1; exit ${{PIPESTATUS[0]}}");
-    Command::new("bash")
+    scrub_env(std::process::Command::new("bash"))
         .arg("-c")
         .arg(script)
         .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .env_remove("GCLI_CONFIG_DIR")
-        .env_remove("GCLI_CACHE_DIR")
-        .env_remove("GRAFANA_CLI_PROFILE")
-        .env_remove("GRAFANA_CLI_URL")
-        .env_remove("GRAFANA_CLI_TOKEN")
-        .env_remove("GRAFANA_CLI_USERNAME")
-        .env_remove("GRAFANA_CLI_PASSWORD")
         .envs(envs.iter().copied())
         .output()
         .expect("failed to spawn bash pipeline")
-}
-
-fn token_config(base: &str) -> tempfile::TempDir {
-    fixture_config(&format!(
-        "current_profile = \"p\"\n[profiles.p]\nurl = \"{base}\"\ntoken = \"t\"\n"
-    ))
 }
 
 // ~2000 datasource entries => serialized JSON well over 128KB, which overflows

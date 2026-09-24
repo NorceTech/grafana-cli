@@ -1,23 +1,62 @@
 #![allow(dead_code)]
 
+use serde_json::Value;
 use std::process::Command;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, ResponseTemplate};
 
-pub fn spawn_gcli(args: &[&str], envs: &[(&str, &str)]) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_gcli"))
-        .args(args)
+/// Env vars scrubbed from every spawn of the binary under test: the two test
+/// dir vars plus every `GRAFANA_CLI_*` override, so no test inherits the
+/// developer's real configuration or environment.
+const SCRUBBED_ENV: &[&str] = &[
+    "GCLI_CONFIG_DIR",
+    "GCLI_CACHE_DIR",
+    "GRAFANA_CLI_PROFILE",
+    "GRAFANA_CLI_URL",
+    "GRAFANA_CLI_TOKEN",
+    "GRAFANA_CLI_USERNAME",
+    "GRAFANA_CLI_PASSWORD",
+];
+
+/// `cmd` with the scrubbed env vars removed. The single owner of the scrub
+/// list: `gcli_command`/`spawn_gcli` and the bash pipelines in `pipe.rs`.
+pub fn scrub_env(mut cmd: Command) -> Command {
+    for var in SCRUBBED_ENV {
+        cmd.env_remove(var);
+    }
+    cmd
+}
+
+/// The `gcli` binary under test, ready to run: args, manifest dir, scrubbed
+/// environment plus `envs`.
+pub fn gcli_command(args: &[&str], envs: &[(&str, &str)]) -> Command {
+    let mut cmd = scrub_env(Command::new(env!("CARGO_BIN_EXE_gcli")));
+    cmd.args(args)
         .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .env_remove("GCLI_CONFIG_DIR")
-        .env_remove("GCLI_CACHE_DIR")
-        .env_remove("GRAFANA_CLI_PROFILE")
-        .env_remove("GRAFANA_CLI_URL")
-        .env_remove("GRAFANA_CLI_TOKEN")
-        .env_remove("GRAFANA_CLI_USERNAME")
-        .env_remove("GRAFANA_CLI_PASSWORD")
-        .envs(envs.iter().copied())
+        .envs(envs.iter().copied());
+    cmd
+}
+
+pub fn spawn_gcli(args: &[&str], envs: &[(&str, &str)]) -> std::process::Output {
+    gcli_command(args, envs)
         .output()
         .expect("failed to spawn gcli")
+}
+
+/// Config with one token-auth profile "p" pointing at `base_url`.
+pub fn token_config(base_url: &str) -> tempfile::TempDir {
+    fixture_config(&format!(
+        "current_profile = \"p\"\n[profiles.p]\nurl = \"{base_url}\"\ntoken = \"t\"\n"
+    ))
+}
+
+/// Every non-empty stdout line parsed as JSON.
+pub fn stdout_lines(out: &std::process::Output) -> Vec<Value> {
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| serde_json::from_str(l).expect("stdout line is JSON"))
+        .collect()
 }
 
 pub fn fixture_config(toml_body: &str) -> tempfile::TempDir {

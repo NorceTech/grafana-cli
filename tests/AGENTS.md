@@ -20,8 +20,9 @@ Black-box integration suite: every test spawns the compiled `gcli` binary agains
 
 Shared harness, `common/mod.rs`:
 
-- `spawn_gcli(args, envs)`: runs `CARGO_BIN_EXE_gcli` from the manifest dir after stripping `GCLI_CONFIG_DIR`, `GCLI_CACHE_DIR` and every `GRAFANA_CLI_*` var. Pass `("GCLI_CONFIG_DIR", dir)` through `envs`, plus `GCLI_CACHE_DIR` for OAuth tests (`auth.rs:28`) and for anything running `profile remove`, which forgets cached tokens (`config_cli.rs` `config_env` points both at one tempdir).
-- `fixture_config(toml)`: `TempDir` holding `config.toml`; keep it bound until the spawn returns.
+- `gcli_command(args, envs)` / `spawn_gcli(args, envs)`: run `CARGO_BIN_EXE_gcli` from the manifest dir after `scrub_env` strips `GCLI_CONFIG_DIR`, `GCLI_CACHE_DIR` and every `GRAFANA_CLI_*` var — the one scrub list, shared with `pipe.rs`'s bash pipelines. Pass `("GCLI_CONFIG_DIR", dir)` through `envs`, plus `GCLI_CACHE_DIR` for OAuth tests (`auth.rs`) and for anything running `profile remove`, which forgets cached tokens (`config_cli.rs` `config_env` points both at one tempdir).
+- `fixture_config(toml)`: `TempDir` holding `config.toml`; keep it bound until the spawn returns. `token_config(base_url)` is the common case: one token-auth profile "p" pointing at `base_url`.
+- `stdout_lines(&out)`: every non-empty stdout line parsed as JSON.
 - Mocks: `health_mock`, `health_auth_mock(authorization)`, `token_endpoint_mock(token, expires_in)` (POST `/token`), `datasources_json(body)` (GET `/api/datasources`).
 - `write_transcript(name, cmd, &out)`, `write_transcript_multi(name, body)`, `transcript_block`: write `qa/transcripts/<name>` with command, stdout, stderr and exit code. `qa/` is gitignored and rewritten by every `cargo test`.
 
@@ -29,7 +30,7 @@ Shared harness, `common/mod.rs`:
 
 - Test shape: `#[tokio::test] async fn sN_<case>` -> `MockServer::start().await` -> mount mocks with `.expect(n)` -> `fixture_config` -> `spawn_gcli` -> assert the exit code with stderr in the failure message -> assert stdout JSON -> `server.verify().await` -> `write_transcript("sN_<case>.txt", "gcli ...", &out)`.
 - A new scenario takes the next scenario ID and writes its own transcript file.
-- `common/mod.rs` is frozen (`pipe.rs:9`). New helpers (config TOML builders, bespoke mocks, `stdout_json`) go in the file that needs them; each file already carries its own `token_config`-style builder.
+- Shared harness helpers live in `common/mod.rs`, which keeps `#![allow(dead_code)]` because each test crate uses a different subset; bespoke mocks and multi-profile TOML builders stay in the file that needs them.
 - Derive, don't trust: build expected wire params with `gcli_lib::timeutil` (`resolve_window`, `to_ns_string`, `to_epoch_secs`), or chrono `timestamp()` for Tempo's whole-second bounds, never hand-computed epochs (`logs.rs:11`, `metrics.rs:12`, `traces.rs:12`).
 - Datasource calls are mocked on the full proxy path `/api/datasources/proxy/uid/<uid>/<api path>` plus `query_param` matchers; the `datasources_json` fixture decides which uid the CLI must resolve.
 - JSON contracts are pinned by exact sorted key sets (`health_datasources.rs:76`, `ux.rs:71`), not by field presence.

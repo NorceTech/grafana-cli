@@ -5,12 +5,6 @@ use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-fn token_config(base: &str) -> tempfile::TempDir {
-    fixture_config(&format!(
-        "current_profile = \"p\"\n[profiles.p]\nurl = \"{base}\"\ntoken = \"t\"\n"
-    ))
-}
-
 #[tokio::test]
 async fn s11a_output_modes_json_and_table() {
     let server = MockServer::start().await;
