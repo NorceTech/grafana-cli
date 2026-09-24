@@ -1,8 +1,7 @@
 use crate::Result;
 use crate::client::GrafanaClient;
-use crate::commands::CommandOutput;
+use crate::commands::{CommandOutput, cell};
 use crate::output::OutputMode;
-use serde_json::Value;
 
 pub async fn run(
     client: &GrafanaClient,
@@ -21,12 +20,4 @@ pub async fn run(
         });
     }
     Ok(CommandOutput::Json(value))
-}
-
-fn cell(v: &Value) -> String {
-    match v {
-        Value::String(s) => s.clone(),
-        Value::Null => String::new(),
-        other => other.to_string(),
-    }
 }

@@ -1,6 +1,6 @@
 use crate::client::{Datasource, GrafanaClient, Reply};
-use crate::commands::{Bounds, CommandOutput, QueryWindow, Windowed, success_data};
-use crate::datasource::{self, Kind};
+use crate::commands::{Bounds, CommandOutput, QueryWindow, Windowed, resolve_ds, success_data};
+use crate::datasource::Kind;
 use crate::output::{LogRecord, OutputMode};
 use crate::timeutil::to_ns_string;
 use crate::{Error, Result};
@@ -96,9 +96,8 @@ async fn loki_context(
 ) -> Result<(String, String, Datasource)> {
     let start = to_ns_string(window.bounds.start)?;
     let end = to_ns_string(window.bounds.end)?;
-    let all = client.datasources().await?;
-    let ds = datasource::resolve(&all, Kind::Loki, window.args.datasource.as_deref())?;
-    Ok((start, end, ds.clone()))
+    let ds = resolve_ds(client, Kind::Loki, window.args.datasource.as_deref()).await?;
+    Ok((start, end, ds))
 }
 
 /// The names in a `labels` or `label/{label}/values` reply.

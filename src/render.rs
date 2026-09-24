@@ -39,7 +39,7 @@ fn print_multi_ok(w: &mut impl Write, name: &str, out: &CommandOutput, mode: Out
             CommandOutput::Logs(records) => {
                 let _ = gcli_lib::output::write_jsonl(w, records);
             }
-            CommandOutput::Json(v) | CommandOutput::Raw(v) => {
+            CommandOutput::Json(v) => {
                 let _ = writeln!(w, "{}", serde_json::json!({"profile": name, "data": v}));
             }
             CommandOutput::Table { headers, rows } => {
@@ -54,14 +54,9 @@ fn print_multi_ok(w: &mut impl Write, name: &str, out: &CommandOutput, mode: Out
             let _ = writeln!(w, "profile: {name}");
             match out {
                 CommandOutput::Table { headers, rows } => {
-                    let headers: Vec<&str> = headers.iter().map(String::as_str).collect();
-                    let _ = writeln!(
-                        w,
-                        "{}",
-                        gcli_lib::output::render_table(&headers, rows.clone())
-                    );
+                    let _ = writeln!(w, "{}", gcli_lib::output::render_table(headers, rows));
                 }
-                CommandOutput::Json(v) | CommandOutput::Raw(v) => {
+                CommandOutput::Json(v) => {
                     let _ = writeln!(w, "{v}");
                 }
                 CommandOutput::Logs(records) => {
@@ -75,7 +70,7 @@ fn print_multi_ok(w: &mut impl Write, name: &str, out: &CommandOutput, mode: Out
 pub(crate) fn print_output(out: &CommandOutput) {
     let mut buf: Vec<u8> = Vec::new();
     match out {
-        CommandOutput::Json(value) | CommandOutput::Raw(value) => {
+        CommandOutput::Json(value) => {
             let _ = writeln!(buf, "{value}");
         }
         CommandOutput::Logs(records) => {
@@ -83,12 +78,7 @@ pub(crate) fn print_output(out: &CommandOutput) {
             let _ = gcli_lib::output::write_jsonl(&mut buf, records);
         }
         CommandOutput::Table { headers, rows } => {
-            let headers: Vec<&str> = headers.iter().map(String::as_str).collect();
-            let _ = writeln!(
-                buf,
-                "{}",
-                gcli_lib::output::render_table(&headers, rows.clone())
-            );
+            let _ = writeln!(buf, "{}", gcli_lib::output::render_table(headers, rows));
         }
     }
     write_stdout(&buf);

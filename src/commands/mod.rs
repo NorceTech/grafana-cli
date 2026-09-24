@@ -1,4 +1,5 @@
-use crate::client::{GrafanaClient, Reply};
+use crate::client::{Datasource, GrafanaClient, Reply};
+use crate::datasource::{self, Kind};
 use crate::output::{LogRecord, OutputMode};
 use crate::timeutil::resolve_window;
 use crate::{Error, Result};
@@ -10,6 +11,7 @@ pub mod health;
 pub mod logs;
 pub mod metrics;
 pub mod profile;
+pub mod prom;
 pub mod traces;
 
 pub enum CommandOutput {
@@ -19,7 +21,24 @@ pub enum CommandOutput {
         headers: Vec<String>,
         rows: Vec<Vec<String>>,
     },
-    Raw(Value),
+}
+
+/// The table cell for a JSON value: strings unquoted, nulls empty, anything
+/// else as its compact JSON.
+fn cell(v: &Value) -> String {
+    match v {
+        Value::String(s) => s.clone(),
+        Value::Null => String::new(),
+        other => other.to_string(),
+    }
+}
+
+/// The one datasource serving a `kind`, resolved from the instance's list
+/// (flag > sole of the type > unique default). Shared by every query
+/// command family.
+async fn resolve_ds(client: &GrafanaClient, kind: Kind, flag: Option<&str>) -> Result<Datasource> {
+    let all = client.datasources().await?;
+    Ok(datasource::resolve(&all, kind, flag)?.clone())
 }
 
 // Time range + datasource selection shared by every query subcommand.

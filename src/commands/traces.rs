@@ -1,6 +1,6 @@
-use crate::client::{Datasource, GrafanaClient};
-use crate::commands::{Bounds, CommandOutput, QueryWindow, Windowed};
-use crate::datasource::{self, Kind};
+use crate::client::GrafanaClient;
+use crate::commands::{Bounds, CommandOutput, QueryWindow, Windowed, cell, resolve_ds};
+use crate::datasource::Kind;
 use crate::output::OutputMode;
 use crate::{Error, Result};
 use chrono::{DateTime, SecondsFormat, Utc};
@@ -43,26 +43,14 @@ impl TracesCmd {
     }
 }
 
-async fn resolve_ds(client: &GrafanaClient, flag: Option<&str>) -> Result<Datasource> {
-    let all = client.datasources().await?;
-    Ok(datasource::resolve(&all, Kind::Tempo, flag)?.clone())
-}
-
-fn cell(v: &Value) -> String {
-    match v {
-        Value::String(s) => s.clone(),
-        Value::Null => String::new(),
-        other => other.to_string(),
-    }
-}
-
 fn nanos_to_rfc3339(s: &str) -> Option<String> {
     let ns: i64 = s.parse().ok()?;
-    DateTime::<Utc>::from_timestamp(
-        ns.div_euclid(1_000_000_000),
-        ns.rem_euclid(1_000_000_000) as u32,
-    )
-    .map(|dt| dt.to_rfc3339_opts(SecondsFormat::Millis, true))
+    // rem_euclid(1_000_000_000) is in 0..1_000_000_000, always inside u32, so
+    // the narrowing conversion cannot fail; try_from states that instead of a
+    // truncating `as`.
+    let subsec_nanos = u32::try_from(ns.rem_euclid(1_000_000_000)).ok()?;
+    DateTime::<Utc>::from_timestamp(ns.div_euclid(1_000_000_000), subsec_nanos)
+        .map(|dt| dt.to_rfc3339_opts(SecondsFormat::Millis, true))
 }
 
 /// Rejects a trace id Tempo would not accept, 1 to 32 hex digits, before it
@@ -84,7 +72,7 @@ pub async fn get(
     mode: OutputMode,
     args: &GetArgs,
 ) -> Result<CommandOutput> {
-    let ds = resolve_ds(client, args.datasource.as_deref()).await?;
+    let ds = resolve_ds(client, Kind::Tempo, args.datasource.as_deref()).await?;
     let value = client
         .proxy_request(&ds.uid, &format!("api/traces/{}", args.trace_id), &[])
         .await?
@@ -100,8 +88,8 @@ pub async fn get(
         }
         eprintln!("note: unrecognized trace structure; printing raw JSON");
     }
-    // Lossless passthrough; main renders Raw exactly like Json (compact single line).
-    Ok(CommandOutput::Raw(value))
+    // Lossless passthrough: the upstream JSON is handed to the renderer as-is.
+    Ok(CommandOutput::Json(value))
 }
 
 /// Span table from Tempo's `api/traces/{id}` JSON: OTLP `batches` (or the
@@ -158,7 +146,7 @@ pub async fn search(
         args,
         bounds: Bounds { start, end },
     } = search;
-    let ds = resolve_ds(client, args.window.datasource.as_deref()).await?;
+    let ds = resolve_ds(client, Kind::Tempo, args.window.datasource.as_deref()).await?;
     // Tempo parses start/end with strconv.ParseInt: whole seconds only, a
     // fraction is a 400. Floor the start and ceil the end to cover the window.
     let end_secs = end.timestamp() + i64::from(end.timestamp_subsec_nanos() > 0);
@@ -168,18 +156,15 @@ pub async fn search(
         ("end", end_secs.to_string()),
         ("limit", args.limit.to_string()),
     ];
-    let body = client
-        .proxy_request(&ds.uid, "api/search", &pairs)
-        .await?
-        .body;
-    let traces = body
-        .get("traces")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
+    let mut reply = client.proxy_request(&ds.uid, "api/search", &pairs).await?;
+    // `traces` is taken out of the body instead of cloned: it is the whole
+    // result, and nothing else reads the reply.
+    let traces = match reply.body.pointer_mut("/traces").map(Value::take) {
+        Some(Value::Array(traces)) => traces,
+        _ => Vec::new(),
+    };
 
     let mut records = Vec::new();
-    let mut rows = Vec::new();
     for t in &traces {
         let start = t
             .get("startTimeUnixNano")
@@ -191,23 +176,27 @@ pub async fn search(
                 t.get("traceID").and_then(Value::as_str).unwrap_or("?")
             );
         }
-        let record = json!({
+        records.push(json!({
             "traceID": t.get("traceID").cloned().unwrap_or(Value::Null),
             "rootServiceName": t.get("rootServiceName").cloned().unwrap_or(Value::Null),
             "rootTraceName": t.get("rootTraceName").cloned().unwrap_or(Value::Null),
             "durationMs": t.get("durationMs").cloned().unwrap_or(Value::Null),
             "start": start,
-        });
-        rows.push(vec![
-            cell(&record["traceID"]),
-            cell(&record["rootServiceName"]),
-            cell(&record["rootTraceName"]),
-            cell(&record["durationMs"]),
-            cell(&record["start"]),
-        ]);
-        records.push(record);
+        }));
     }
     if mode == OutputMode::Table {
+        let rows = records
+            .iter()
+            .map(|r| {
+                vec![
+                    cell(&r["traceID"]),
+                    cell(&r["rootServiceName"]),
+                    cell(&r["rootTraceName"]),
+                    cell(&r["durationMs"]),
+                    cell(&r["start"]),
+                ]
+            })
+            .collect();
         return Ok(CommandOutput::Table {
             headers: [
                 "traceID",

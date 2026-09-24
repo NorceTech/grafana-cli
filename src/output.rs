@@ -36,11 +36,13 @@ pub fn write_jsonl(out: &mut impl Write, records: &[LogRecord]) -> std::io::Resu
     Ok(())
 }
 
-pub fn render_table(headers: &[&str], rows: Vec<Vec<String>>) -> String {
+pub fn render_table(headers: &[String], rows: &[Vec<String>]) -> String {
     let mut table = comfy_table::Table::new();
-    table.set_header(headers);
+    let header: Vec<&str> = headers.iter().map(String::as_str).collect();
+    table.set_header(header);
     for row in rows {
-        table.add_row(row);
+        let cells: Vec<&str> = row.iter().map(String::as_str).collect();
+        table.add_row(cells);
     }
     table.to_string()
 }
@@ -108,8 +110,8 @@ mod tests {
     #[test]
     fn table_contains_headers_and_cells() {
         let out = render_table(
-            &["profile", "line"],
-            vec![
+            &["profile".to_string(), "line".to_string()],
+            &[
                 vec!["prod".into(), "hello".into()],
                 vec!["dev".into(), "world".into()],
             ],
