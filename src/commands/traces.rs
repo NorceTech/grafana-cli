@@ -80,7 +80,7 @@ pub async fn get(
     if mode == OutputMode::Table {
         if let Some(rows) = span_rows(&value) {
             return Ok(CommandOutput::Table {
-                headers: ["service", "name", "durationMillis"]
+                headers: ["service", "name", "status", "durationMillis"]
                     .map(String::from)
                     .to_vec(),
                 rows,
@@ -118,11 +118,19 @@ fn span_rows(v: &Value) -> Option<Vec<Vec<String>>> {
                 let name = span.get("name").and_then(Value::as_str)?;
                 let start = nanos(span, "startTimeUnixNano")?;
                 let end = nanos(span, "endTimeUnixNano")?;
+                // OTLP status codes, as the short form TraceQL uses; unset,
+                // missing and unknown render as an empty cell.
+                let status = match span.pointer("/status/code").and_then(Value::as_str) {
+                    Some("STATUS_CODE_ERROR") => "error",
+                    Some("STATUS_CODE_OK") => "ok",
+                    _ => "",
+                };
                 spans.push((
                     start,
                     vec![
                         service.to_string(),
                         name.to_string(),
+                        status.to_string(),
                         format!("{}", end.saturating_sub(start) as f64 / 1e6),
                     ],
                 ));
@@ -281,8 +289,13 @@ mod tests {
     #[test]
     fn span_rows_from_tempo_otlp_sorted_by_start() {
         let expected = Some(vec![
-            vec!["checkout".into(), "GET /cart".into(), "1.5".into()],
-            vec!["cart".into(), "SELECT".into(), "2.5".into()],
+            vec![
+                "checkout".into(),
+                "GET /cart".into(),
+                "".into(),
+                "1.5".into(),
+            ],
+            vec!["cart".into(), "SELECT".into(), "".into(), "2.5".into()],
         ]);
         assert_eq!(span_rows(&otlp_trace()), expected);
         // OTLP's standard top-level key parses the same way.
@@ -296,8 +309,35 @@ mod tests {
         v["batches"][1]["resource"]["attributes"] = json!([]);
         assert_eq!(
             span_rows(&v).unwrap()[0],
-            ["".to_string(), "GET /cart".into(), "1.5".into()]
+            ["".to_string(), "GET /cart".into(), "".into(), "1.5".into()]
         );
+    }
+
+    #[test]
+    fn span_rows_render_error_and_ok_status_codes() {
+        let mut v = otlp_trace();
+        // batches[1] holds the earlier span (GET /cart), batches[0] SELECT.
+        v["batches"][1]["scopeSpans"][0]["spans"][0]["status"] =
+            json!({"code": "STATUS_CODE_ERROR"});
+        v["batches"][0]["scopeSpans"][0]["spans"][0]["status"] = json!({"code": "STATUS_CODE_OK"});
+
+        let rows = span_rows(&v).unwrap();
+
+        assert_eq!(rows[0], ["checkout", "GET /cart", "error", "1.5"]);
+        assert_eq!(rows[1], ["cart", "SELECT", "ok", "2.5"]);
+    }
+
+    #[test]
+    fn span_rows_unset_or_missing_status_renders_empty() {
+        let mut v = otlp_trace();
+        v["batches"][1]["scopeSpans"][0]["spans"][0]["status"] =
+            json!({"code": "STATUS_CODE_UNSET"});
+        v["batches"][0]["scopeSpans"][0]["spans"][0]["status"] = json!({});
+
+        let rows = span_rows(&v).unwrap();
+
+        assert_eq!(rows[0][2], "");
+        assert_eq!(rows[1][2], "");
     }
 
     #[test]

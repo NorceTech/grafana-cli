@@ -241,7 +241,7 @@ async fn s21_traces_get_table_renders_one_row_per_span() {
     for cell in ["GET /cart", "SELECT items", "checkout", "cart"] {
         assert!(stdout.contains(cell), "{cell} missing: {stdout}");
     }
-    for header in ["service", "name", "durationMillis"] {
+    for header in ["service", "name", "status", "durationMillis"] {
         assert!(stdout.contains(header), "{header} missing: {stdout}");
     }
     assert!(!stdout.trim_start().starts_with('{'), "{stdout}");
@@ -297,6 +297,70 @@ async fn s7_traces_get_rejects_a_path_traversing_trace_id() {
     write_transcript(
         "s7_traces_get_path_traversal.txt",
         "gcli traces get '../../../../../../../api/admin/users'",
+        &out,
+    );
+}
+// The span table renders OTLP status codes: error/ok between name and
+// duration, unset and missing status as an empty cell.
+#[tokio::test]
+async fn s31_traces_get_table_renders_span_status() {
+    let server = MockServer::start().await;
+    ds_mock().expect(1).mount(&server).await;
+    Mock::given(method("GET"))
+        .and(path("/api/datasources/proxy/uid/tempo1/api/traces/abc123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"batches": [
+            {"resource": {"attributes": [
+                {"key": "service.name", "value": {"stringValue": "checkout"}}
+            ]},
+             "scopeSpans": [{"spans": [
+                {"spanId": "s1", "name": "GET /cart",
+                 "startTimeUnixNano": "1759372800000000000",
+                 "endTimeUnixNano": "1759372800001500000",
+                 "status": {"code": "STATUS_CODE_ERROR"}},
+                {"spanId": "s2", "name": "POST /pay",
+                 "startTimeUnixNano": "1759372800002000000",
+                 "endTimeUnixNano": "1759372800005000000",
+                 "status": {"code": "STATUS_CODE_OK"}}
+             ]}]},
+            {"resource": {"attributes": [
+                {"key": "service.name", "value": {"stringValue": "cart"}}
+            ]},
+             "scopeSpans": [{"spans": [
+                {"spanId": "s3", "name": "SELECT items",
+                 "startTimeUnixNano": "1759372800000500000",
+                 "endTimeUnixNano": "1759372800003000000",
+                 "status": {"code": "STATUS_CODE_UNSET"}},
+                {"spanId": "s4", "name": "cache.get",
+                 "startTimeUnixNano": "1759372800003500000",
+                 "endTimeUnixNano": "1759372800004000000"}
+             ]}]}
+        ]})))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let cfg = token_config(&server.uri());
+    let env = ("GCLI_CONFIG_DIR", cfg.path().to_str().unwrap());
+    let out = spawn_gcli(&["traces", "get", "abc123", "--output", "table"], &[env]);
+
+    let stdout = assert_success(&out);
+    // comfy-table's first line is the top border; the header text is second.
+    let header = stdout.lines().nth(1).unwrap_or_default();
+    let position = |needle: &str| header.find(needle).unwrap_or(usize::MAX);
+    assert!(
+        position("name") < position("status") && position("status") < position("durationMillis"),
+        "status column not between name and durationMillis: {header}"
+    );
+    assert!(stdout.contains("error"), "{stdout}");
+    let pay_row = stdout
+        .lines()
+        .find(|line| line.contains("POST /pay"))
+        .unwrap_or_default();
+    assert!(pay_row.contains("ok"), "{stdout}");
+    server.verify().await;
+    write_transcript(
+        "s31_traces_get_table_status.txt",
+        "gcli traces get abc123 --output table",
         &out,
     );
 }
