@@ -121,7 +121,8 @@ pub async fn get_oauth_token(source: &OAuthSource, http: &reqwest::Client) -> Re
         .unwrap_or(3600);
 
     let entry = CacheEntry {
-        expires_at_unix: now + expires_in - 60,
+        // Saturating: expires_in comes from the endpoint and can be anything.
+        expires_at_unix: now.saturating_add(expires_in).saturating_sub(60),
         token: token.clone(),
         key,
     };
@@ -308,6 +309,35 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(tok, "cached");
+    }
+
+    // A token endpoint can name any expires_in; the expiry arithmetic must
+    // saturate to the i64 second range instead of overflowing.
+    #[tokio::test]
+    async fn oauth_expires_in_overflow_saturates_instead_of_panicking() {
+        let dir = cache_dir();
+
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path("/token"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({
+                "access_token": "tok", "expires_in": i64::MAX
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let cfg = oauth_config(&format!("{}/token", server.uri()));
+        let tok = get_oauth_token(&source(&dir, cfg), &reqwest::Client::new())
+            .await
+            .unwrap();
+
+        assert_eq!(tok, "tok");
+        assert_eq!(
+            read_cache_file(dir.path())["p:cid"]["expires_at_unix"],
+            json!(i64::MAX - 60)
+        );
+        server.verify().await;
     }
 
     #[tokio::test]
