@@ -32,7 +32,8 @@ grafana-cli/
 ├── tests/             # black-box suite against wiremock (own AGENTS.md)
 ├── skills/gcli/       # distributable agent skill (mirrors the README contract)
 ├── .cargo/config.toml # -Zthreads=14: nightly rustc only
-└── flake.nix          # packages.default/app (builds gcli, `nix run .`) + dev shell: fenix nightly, rust-analyzer, treefmt hook
+├── .github/workflows/ # ci.yml: nix flake check per platform + Windows cross build, cached /nix/store; release.yml: v* tag -> verify, CI, publish
+└── flake.nix          # crane: packages.default (static musl on Linux) and gcli-windows (mingw cross), checks (build, clippy, tests, treefmt), dev shell: fenix nightly, rust-analyzer, treefmt hook
 ```
 
 ## WHERE TO LOOK
@@ -106,6 +107,8 @@ cargo test --lib             # unit tests only
 cargo test --test logs s4a   # one integration file, filtered by scenario id
 cargo clippy --all-targets
 nix fmt                      # treefmt: rustfmt + nixfmt + prettier (also the pre-commit hook)
+nix build                    # the release binary, in result/bin
+nix flake check              # what CI runs: package, clippy -D warnings, tests, treefmt
 ```
 
 ## NOTES
@@ -124,3 +127,5 @@ nix fmt                      # treefmt: rustfmt + nixfmt + prettier (also the pr
 - `datasources --check` calls Grafana's per-datasource health endpoint for each listed datasource; a failing health call becomes `"health":"ERROR"` plus the error text in that record, never a command failure.
 - `tokens.json` read-modify-writes (store after a fetch, invalidate after a 401) go through `auth::token_cache::update`, which holds an in-process mutex plus an exclusive lock on the `tokens.json.lock` sidecar, so parallel profiles and parallel gcli processes keep each other's tokens. Plain lookups take no lock: every write is an atomic rename.
 - Cached tokens sit under `<profile>:<client_id>` in `tokens.json` (tests pin that layout), but each entry stores its full `TokenKey` (profile, client_id, token_url, audience, scopes) and is reused only on an exact match; `profile remove` forgets the profile's tokens. A cache written before entries carried their key reads as empty.
+- Nix builds go through crane: dependencies build once per `Cargo.toml`/`Cargo.lock`/`.cargo/config.toml` state, and each derivation's fileset holds only what it reads (the binary gets the manifests and `src/`; clippy and tests add `tests/*.rs`), so doc edits rebuild no Rust derivation and a new test file never rebuilds the dependencies. Linux packages build through `pkgsStatic` (static musl), and `allowedReferences = [ ]` fails any build whose binary still points into `/nix/store`; on macOS std's libiconv is rewritten to `/usr/lib`. `packages.gcli-windows` cross-compiles from any system through a native crane pointed at mingw (crane's cross mode would add wine), links libgcc and winpthreads statically, and fails if `gcli.exe` imports a mingw `lib*.dll`. `checks.gcli-test` runs the suite in the release profile inside the Nix build sandbox, which allows loopback networking only, so tests stay on wiremock at 127.0.0.1 and temp dirs.
+- Releases: bump `version` in `Cargo.toml`, let `cargo check` update `Cargo.lock`, commit and push main, then push an annotated tag `v<version>` on that commit. `release.yml` rejects a tag that is off main or disagrees with `Cargo.toml`, reruns CI (with main's cached store it rebuilds nothing main already built) and publishes `gcli-linux-x86_64`, `gcli-linux-aarch64`, `gcli-macos-aarch64`, `gcli-windows-x86_64.exe` and `checksums.txt`. Only main saves CI caches.

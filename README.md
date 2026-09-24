@@ -4,6 +4,21 @@ A command line client for querying Grafana, built for humans and AI agents. It q
 
 ## Install
 
+Each [release](https://github.com/NorceTech/grafana-cli/releases/latest) ships a binary for macOS (Apple silicon), Linux (x86_64 and aarch64) and Windows (x86_64), plus `checksums.txt` with their SHA-256 sums. The Linux binaries are statically linked, so they run on any distribution.
+
+```console
+$ curl -fsSL https://github.com/NorceTech/grafana-cli/releases/latest/download/gcli-macos-aarch64 -o /usr/local/bin/gcli
+$ chmod +x /usr/local/bin/gcli
+```
+
+On Linux, download `gcli-linux-$(uname -m)` instead. On Windows, in PowerShell, then add the directory to your `PATH`:
+
+```powershell
+$dir = Join-Path $env:LOCALAPPDATA 'Programs\gcli'
+New-Item -ItemType Directory -Path $dir -Force | Out-Null
+Invoke-WebRequest 'https://github.com/NorceTech/grafana-cli/releases/latest/download/gcli-windows-x86_64.exe' -OutFile (Join-Path $dir 'gcli.exe')
+```
+
 From a checkout of this repository:
 
 ```console
@@ -44,7 +59,7 @@ $ gcli logs search '{job="api"}' --since 1h
 
 ## Configuration
 
-The config file lives at `$GCLI_CONFIG_DIR/config.toml` if `GCLI_CONFIG_DIR` is set, otherwise in the platform config directory: `~/.config/grafana-cli/config.toml` on Linux, `~/Library/Application Support/grafana-cli/config.toml` on macOS. A missing file is fine; the CLI then has no profiles until you add one.
+The config file lives at `$GCLI_CONFIG_DIR/config.toml` if `GCLI_CONFIG_DIR` is set, otherwise in the platform config directory: `~/.config/grafana-cli/config.toml` on Linux, `~/Library/Application Support/grafana-cli/config.toml` on macOS, `%APPDATA%\grafana-cli\config\config.toml` on Windows. A missing file is fine; the CLI then has no profiles until you add one.
 
 Full example showing all three auth modes:
 
@@ -89,11 +104,11 @@ A profile must use exactly one auth mode: `token`/`token_command`, `username` pl
 
 The `GRAFANA_CLI_URL`, `GRAFANA_CLI_TOKEN`, `GRAFANA_CLI_USERNAME` and `GRAFANA_CLI_PASSWORD` variables override the matching fields of the selected profile, which is handy for one-shot runs against a different instance; the `--url`, `--token`, `--username` and `--password` flags override both. These overrides describe one instance and one identity, so they apply only when exactly one profile is selected: when `--profile a,b` or `--all-profiles` selects several, setting any of them fails with a `config` error (exit 2) that names it, instead of sending one profile's credentials to every instance.
 
-**Directories.** `GCLI_CONFIG_DIR` overrides where `config.toml` is read and written. `GCLI_CACHE_DIR` overrides where the OAuth token cache (`tokens.json`) lives; the default is the platform cache directory (`~/.cache/grafana-cli` on Linux, `~/Library/Caches/grafana-cli` on macOS).
+**Directories.** `GCLI_CONFIG_DIR` overrides where `config.toml` is read and written. `GCLI_CACHE_DIR` overrides where the OAuth token cache (`tokens.json`) lives; the default is the platform cache directory (`~/.cache/grafana-cli` on Linux, `~/Library/Caches/grafana-cli` on macOS, `%LOCALAPPDATA%\grafana-cli\cache` on Windows).
 
-**Security.** Prefer the `*_command` variants (`token_command`, `password_command`, `client_secret_command`) over plaintext secrets. The command runs at request time and its trimmed stdout becomes the secret, so credentials can come from a password manager, a file or an agent instead of the config file. A single-element command is a shell line run through `sh -c`, so `~` expansion and pipes work; an array of two or more elements is executed directly as argv, without a shell, so elements containing spaces (like `op://vault/Grafana Prod/token`) survive intact. Anywhere a secret is passed as a flag value (the global `--token` and `--password`, `profile add --token`/`--password`/`--client-secret`, `profile set-token --token`), a value of `-` instead reads the secret from stdin (trimmed, non-empty, never a prompt), keeping it out of `ps` output and shell history. Note that this also means anyone who can edit your config file can run arbitrary commands as you; that is by design and scoped to your own machine.
+**Security.** Prefer the `*_command` variants (`token_command`, `password_command`, `client_secret_command`) over plaintext secrets. The command runs at request time and its trimmed stdout becomes the secret, so credentials can come from a password manager, a file or an agent instead of the config file. A single-element command is a shell line run through `sh -c`, so `~` expansion and pipes work (on Windows this needs `sh` on `PATH`, which Git for Windows provides); an array of two or more elements is executed directly as argv, without a shell, so elements containing spaces (like `op://vault/Grafana Prod/token`) survive intact. Anywhere a secret is passed as a flag value (the global `--token` and `--password`, `profile add --token`/`--password`/`--client-secret`, `profile set-token --token`), a value of `-` instead reads the secret from stdin (trimmed, non-empty, never a prompt), keeping it out of `ps` output and shell history. Note that this also means anyone who can edit your config file can run arbitrary commands as you; that is by design and scoped to your own machine.
 
-**Secret files.** `config.toml` and `tokens.json` are written through one helper: a fresh 0600 temp file next to the target, fsynced, then renamed over it. A write is never partial and the file is never wider than 0600; missing config and cache directories are created 0700.
+**Secret files.** `config.toml` and `tokens.json` are written through one helper: a fresh 0600 temp file next to the target, fsynced, then renamed over it. A write is never partial and the file is never wider than 0600; missing config and cache directories are created 0700. The modes apply on Unix; on Windows the files keep the default permissions of your user profile directory.
 
 **Proxies.** Outbound requests honor the standard proxy environment variables (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`). Operating-system proxy settings are not read.
 

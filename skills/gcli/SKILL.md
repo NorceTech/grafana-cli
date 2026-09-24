@@ -9,7 +9,7 @@ Query Grafana for logs (Loki), metrics (Prometheus/Mimir) and traces (Tempo) thr
 
 ## Install and one-time auth
 
-Install with `cargo install --path .` from a checkout, or `nix profile install .#gcli`.
+Install a release binary (`gcli-macos-aarch64`, `gcli-linux-x86_64`, `gcli-linux-aarch64`, `gcli-windows-x86_64.exe`) from https://github.com/NorceTech/grafana-cli/releases/latest, `cargo install --path .` from a checkout, or `nix profile install .#gcli`.
 
 ```bash
 gcli profile add prod --url https://grafana.example.com --token "$GRAFANA_TOKEN"   # token auth
