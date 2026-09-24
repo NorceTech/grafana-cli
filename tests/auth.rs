@@ -145,10 +145,25 @@ async fn s10_oauth_expiry() {
 
     let config = fixture_config(&oauth_config_toml(&server.uri()));
     let cache = tempfile::tempdir().unwrap();
+    // Seed an EXPIRED entry in the keyed format the cache actually reads
+    // (CacheEntry's full TokenKey, matching the profile's oauth settings).
+    // A keyless pre-key-format entry fails deserialization and the whole
+    // cache reads empty, which would test the cold path, not expiry.
     let past = chrono::Utc::now().timestamp() - 1000;
     std::fs::write(
         cache.path().join("tokens.json"),
-        json!({"p:cid": {"token": "stale", "expires_at_unix": past}}).to_string(),
+        json!({"p:cid": {
+            "token": "stale",
+            "expires_at_unix": past,
+            "key": {
+                "profile": "p",
+                "client_id": "cid",
+                "token_url": format!("{}/token", server.uri()),
+                "audience": null,
+                "scopes": null
+            }
+        }})
+        .to_string(),
     )
     .unwrap();
 
