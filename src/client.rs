@@ -449,6 +449,40 @@ mod tests {
         assert!(message.contains("Connection refused"), "{message}");
     }
 
+    // The shared client's read_timeout bounds a request against a server that
+    // sends nothing: a Transport error keeping reqwest's timeout cause, with
+    // a message that names the path and the timeout.
+    #[tokio::test]
+    async fn read_timeout_bounds_a_server_that_answers_nothing() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/health"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(json!({"version": "1"}))
+                    .set_delay(std::time::Duration::from_secs(5)),
+            )
+            .mount(&server)
+            .await;
+        let http = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .read_timeout(std::time::Duration::from_millis(100))
+            .build()
+            .unwrap();
+
+        let err = GrafanaClient::new(&server.uri(), AuthProvider::Token("t".into()), http)
+            .expect("fixture url")
+            .health()
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(&err, Error::Transport { path, source } if path == "/api/health" && source.is_timeout()),
+            "{err:?}"
+        );
+        assert!(err.to_string().contains("timed out"), "{err}");
+    }
+
     #[tokio::test]
     async fn token_auth_401_fails_fast() {
         let server = MockServer::start().await;

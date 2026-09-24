@@ -95,22 +95,41 @@ Arguments:
   <NAME>
 
 Options:
-      --profile <NAMES>                                Comma-separated profile names
+Options:
+      --profile <NAMES>
+          Comma-separated profile names
       --url <URL>
+
       --all-profiles
+
       --token <TOKEN>
-      --output <OUTPUT>                                [possible values: json, table]
+
+      --output <OUTPUT>
+          [possible values: json, table]
       --token-command <TOKEN_COMMAND>
+
       --username <USERNAME>
+
       --password <PASSWORD>
+
       --password-command <PASSWORD_COMMAND>
+
       --token-url <TOKEN_URL>
+
       --client-id <CLIENT_ID>
+
+      --timeout <DURATION>
+          Request timeout, e.g. 30s, 2m or 500ms [default: 60s]
       --client-secret <CLIENT_SECRET>
+
       --client-secret-command <CLIENT_SECRET_COMMAND>
+
       --scope <SCOPE>
+
       --audience <AUDIENCE>
-  -h, --help                                           Print help
+
+  -h, --help
+          Print help
 ```
 
 `--token-command`, `--password-command` and `--client-secret-command` take a comma-separated command (`--token-command "cat,~/.tokens/grafana"`). `--scope` is repeatable and also accepts commas. Adding a profile with OAuth flags (`--token-url`, `--client-id`, ...) writes the `oauth` table for you.
@@ -184,11 +203,14 @@ Options:
       --token <TOKEN>
       --username <USERNAME>
       --password <PASSWORD>
+      --timeout <DURATION>   Request timeout, e.g. 30s, 2m or 500ms [default: 60s]
   -h, --help                 Print help
   -V, --version              Print version
 ```
 
 Every command accepts the same global flags, before or after the subcommand. `--url`, `--token`, `--username`, `--password` override the active profile for that one invocation.
+
+`--timeout <DURATION>` bounds every request (default `60s`; humantime syntax like `30s`, `2m` or `500ms`). Connecting must start within 10 seconds, and the server may not fall silent for longer than the timeout — a slow but steadily streaming response still completes. A request that gives up is an `io` error (exit 1); an unparsable duration is a `config` error (exit 2).
 
 ### Time windows
 
@@ -248,6 +270,7 @@ Options:
       --direction <DIRECTION>    [default: backward] [possible values: forward, backward]
       --username <USERNAME>
       --password <PASSWORD>
+      --timeout <DURATION>       Request timeout, e.g. 30s, 2m or 500ms [default: 60s]
   -h, --help                     Print help
 ```
 

@@ -36,6 +36,15 @@ pub(crate) struct Cli {
     #[arg(long, global = true)]
     pub(crate) password: Option<String>,
 
+    #[arg(
+        long,
+        global = true,
+        value_name = "DURATION",
+        default_value = "60s",
+        help = "Request timeout, e.g. 30s, 2m or 500ms"
+    )]
+    pub(crate) timeout: String,
+
     #[command(subcommand)]
     pub(crate) command: Commands,
 }
@@ -117,6 +126,16 @@ mod tests {
     fn global_flags_accepted_after_subcommand() {
         let c = parse(&["health", "--output", "table", "--profile", "x"]);
         assert_eq!(c.output, Some(OutputMode::Table));
+    }
+
+    #[test]
+    fn global_timeout_flag() {
+        let c = parse(&["--timeout", "30s", "health"]);
+        assert_eq!(c.timeout, "30s");
+        let c = parse(&["health", "--timeout", "2m"]);
+        assert_eq!(c.timeout, "2m");
+        let c = parse(&["health"]);
+        assert_eq!(c.timeout, "60s");
     }
 
     #[test]

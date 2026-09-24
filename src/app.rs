@@ -12,8 +12,23 @@ use std::sync::Arc;
 
 use crate::cli::{Cli, Commands, Shell};
 use crate::render::{fail, print_output, print_results, write_stdout};
+use gcli_lib::error::Error;
+use std::time::Duration;
 
 pub(crate) async fn run(cli: Cli) -> i32 {
+    // The one place --timeout is parsed: every request and every secret
+    // helper command below gets this budget.
+    let timeout = match humantime::parse_duration(&cli.timeout) {
+        Ok(timeout) => timeout,
+        Err(e) => {
+            return fail(
+                None,
+                &Error::Config {
+                    message: format!("--timeout '{}': {e}", cli.timeout),
+                },
+            );
+        }
+    };
     // Lazy: completions output ignores --output.
     let mode = || resolve_output(cli.output, std::io::stdout().is_terminal());
     // The only read of the process environment: everything below gets values.
@@ -32,11 +47,17 @@ pub(crate) async fn run(cli: Cli) -> i32 {
             0
         }
         Commands::Profile { cmd } => profile_command(cmd, mode(), &env),
-        Commands::Query(query) => dispatch(&cli, mode(), query, env).await,
+        Commands::Query(query) => dispatch(&cli, mode(), query, env, timeout).await,
     }
 }
 
-async fn dispatch(cli: &Cli, mode: OutputMode, query: &Query, env: Environment) -> i32 {
+async fn dispatch(
+    cli: &Cli,
+    mode: OutputMode,
+    query: &Query,
+    env: Environment,
+    timeout: Duration,
+) -> i32 {
     let flags = ProfileOverrides {
         url: cli.url.clone(),
         token: cli.token.clone(),
@@ -69,7 +90,14 @@ async fn dispatch(cli: &Cli, mode: OutputMode, query: &Query, env: Environment) 
             return fail(label, &e);
         }
     };
-    let http = reqwest::Client::new();
+    let http = match reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .read_timeout(timeout)
+        .build()
+    {
+        Ok(http) => http,
+        Err(e) => return fail(cli.profile.as_deref(), &Error::Io(std::io::Error::other(e))),
+    };
     let cache_dir = env.cache_dir;
     let results = gcli_lib::fanout::run(profiles, move |name, profile| {
         let query = Arc::clone(&query);
