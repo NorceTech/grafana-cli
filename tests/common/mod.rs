@@ -96,6 +96,14 @@ pub fn datasources_json(body: serde_json::Value) -> Mock {
         .respond_with(ResponseTemplate::new(200).set_body_json(body))
 }
 
+/// The sole Loki datasource `loki1`, default, for query-command tests.
+pub fn loki_datasources_mock() -> Mock {
+    datasources_json(serde_json::json!([{
+        "id": 1, "uid": "loki1", "name": "Loki", "type": "loki",
+        "url": "/loki", "isDefault": true
+    }]))
+}
+
 pub fn write_transcript(name: &str, cmd: &str, output: &std::process::Output) {
     write_transcript_multi(name, &transcript_block(cmd, output));
 }

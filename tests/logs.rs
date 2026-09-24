@@ -24,13 +24,6 @@ fn ts_ns(rfc3339: &str) -> String {
     gcli_lib::timeutil::to_ns_string(dt.with_timezone(&chrono::Utc)).expect("ts ns")
 }
 
-fn loki_datasources_mock() -> Mock {
-    datasources_json(json!([{
-        "id": 1, "uid": "loki1", "name": "Loki", "type": "loki",
-        "url": "/loki", "isDefault": true
-    }]))
-}
-
 // 2 streams x 2 lines, timestamps interleaved OUT of order across streams.
 fn streams_body() -> Value {
     json!({

@@ -26,13 +26,6 @@ async fn health_500(server: &MockServer) {
         .await;
 }
 
-fn loki_datasources_mock() -> Mock {
-    datasources_json(json!([{
-        "id": 1, "uid": "loki1", "name": "Loki", "type": "loki",
-        "url": "/loki", "isDefault": true
-    }]))
-}
-
 fn stderr_lines(out: &std::process::Output) -> Vec<Value> {
     String::from_utf8_lossy(&out.stderr)
         .lines()
