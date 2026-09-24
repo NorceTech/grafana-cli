@@ -73,7 +73,7 @@ Refs = ast-grep AST-node references across `src/` and `tests/`, definition exclu
 - One package, two crates: lib `gcli_lib` holds everything reusable; bin `gcli` is `main.rs` plus `app.rs`, `cli.rs`, `render.rs`, declared in `main.rs`, not `lib.rs`. In those three files `crate::` is the bin and library items are `gcli_lib::...`; integration tests can only reach `gcli_lib` or spawn the binary.
 - Clap types live in the lib beside the code that consumes them (`*Cmd` / `*Args` in `commands/`, `QueryWindow`, `datasource::Kind`, `OutputMode`); the bin keeps only `Cli`, `Commands` and `Shell`. Clap-derived items take `//` comments, never `///`: clap turns doc comments into help text.
 - Lib code never prints data: commands return `CommandOutput` and the bin renders it. Diagnostics go to stderr.
-- Fallible lib code returns `crate::Result<T>` with the thiserror `Error`; the variant decides the JSON `kind` and the exit code. `anyhow` is in Cargo.toml but unused; don't introduce it.
+- Fallible lib code returns `crate::Result<T>` with the thiserror `Error`; the variant decides the JSON `kind` and the exit code. `anyhow` is not a dependency; don't introduce it.
 - Bad user input is `Error::Config` (exit 2); transport failures are `Transport` (kind `io`, reqwest's error kept as `source`), non-2xx replies `Http`, 2xx replies gcli cannot use (not JSON, wrong shape) `Response`, other I/O `Io`, bad profile urls `Url` (`client::BaseUrl::parse`: absolute http/https only, checked in `profile add` and before the client is built) (all exit 1).
 - Deterministic output: `BTreeMap` for profiles and labels, explicit sorts before rendering.
 - `config.toml` and `tokens.json` are written only through `secret_file::write_secret`: a fresh 0600 sibling temp file, fsynced, then renamed over the target, so the file is never partial and never wider than 0600; missing config and cache directories are created 0700.
@@ -111,7 +111,7 @@ nix fmt                      # treefmt: rustfmt + nixfmt + prettier (also the pr
 
 - Profile selection: `--profile a,b` (order kept) or `--all-profiles` (sorted; clap makes them conflict), else `GRAFANA_CLI_PROFILE` (one name, no CSV), else `current_profile`.
 - `GRAFANA_CLI_{URL,TOKEN,USERNAME,PASSWORD}` override the selected profile and the `--url/--token/--username/--password` flags win over them, but only when exactly one profile is selected: with several (`--profile a,b`, `--all-profiles`) any set override is `Error::Config` (exit 2) naming it, so one host never receives every profile's credentials. `app::dispatch` calls `fanout::apply_overrides` after `resolve_profiles`, which (like `Config::active_profile`) returns profiles as stored.
-- clap's `env` feature is enabled but unused: env vars are read by hand, only in `Environment::from_process` (`src/environment.rs`), and do not appear in `--help`.
+- Env vars are read by hand, only in `Environment::from_process` (`src/environment.rs`), and do not appear in `--help`.
 - `auth::from_profile` order is oauth > token/token_command > basic, so `--token` cannot turn an OAuth profile into token auth.
 - `*_command` secrets run as `sh -c "<args joined by spaces>"` at request time; a non-zero exit or empty output is an auth error.
 - No HTTP timeouts and no retries except the single OAuth 401 refetch; fanout spawns one task per profile with no concurrency cap.
