@@ -1,13 +1,14 @@
 //! Profile authentication: which provider a profile resolves to, the OAuth
-//! token machinery (`oauth`) and the `sh -c` secret commands (`secret`).
+//! token machinery (`oauth`, with the `tokens.json` cache in `token_cache`)
+//! and the `sh -c` secret commands (`secret`).
 
-mod oauth;
+pub mod oauth;
 mod secret;
+pub mod token_cache;
 
 pub use oauth::{get_oauth_token, invalidate};
 
 use crate::config::{OAuthConfig, Profile};
-use crate::token_cache;
 use crate::{Result, error::Error};
 use std::path::Path;
 

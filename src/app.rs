@@ -1,12 +1,12 @@
 use clap::CommandFactory;
 use clap_complete::generate;
+use gcli_lib::auth::token_cache;
 use gcli_lib::client::GrafanaClient;
 use gcli_lib::commands::profile::ProfileCmd;
 use gcli_lib::commands::{self, Query};
 use gcli_lib::config::{Config, config_path};
 use gcli_lib::environment::{Environment, ProfileOverrides};
 use gcli_lib::output::{OutputMode, resolve_output};
-use gcli_lib::token_cache;
 use std::io::IsTerminal;
 use std::sync::Arc;
 

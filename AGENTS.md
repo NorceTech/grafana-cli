@@ -22,8 +22,7 @@ grafana-cli/
 │   ├── client.rs      # GrafanaClient: auth headers, OAuth 401 retry, proxy GET
 │   ├── config.rs      # config.toml model, path, load/save, profile resolution
 │   ├── environment.rs # Environment (the only env reader), ProfileOverrides
-│   ├── auth/          # mod.rs AuthProvider + from_profile, oauth.rs token fetch/cache, secret.rs sh -c commands
-│   ├── token_cache.rs # OAuth tokens.json: TokenKey, lookup, locked store/remove/forget
+│   ├── auth/          # mod.rs AuthProvider + from_profile, oauth.rs token fetch, token_cache.rs tokens.json (TokenKey, locked store/remove/forget), secret.rs sh -c commands
 │   ├── secret_file.rs # write_secret: atomic owner-only writes of secret files
 │   ├── fanout.rs      # --profile a,b / --all-profiles, overrides, JoinSet, exit aggregation
 │   ├── datasource.rs  # Kind enum; pick: flag > sole of type > unique default
@@ -44,7 +43,7 @@ grafana-cli/
 | Rendering, multi-profile wrapping      | `src/render.rs`                             | the only stdout writer                                                                                  |
 | New error kind or exit code            | `src/error.rs`                              | `emit_json_error` + `exit_code` + their tests + README table                                            |
 | Profile selection, env vars            | `src/{environment,fanout,config}.rs`        | see NOTES                                                                                               |
-| Auth modes, OAuth token cache          | `src/{auth/,token_cache.rs,client.rs}`      |                                                                                                         |
+| Auth modes, OAuth token cache          | `src/{auth/,client.rs}`                     |                                                                                                         |
 | Time windows                           | `src/timeutil.rs`                           | resolved once per invocation, before fanout, by `Query::resolve` (`src/commands/mod.rs`)                |
 | Integration tests                      | `tests/`                                    | own AGENTS.md                                                                                           |
 | User-facing contract                   | `README.md`                                 | sections Output modes, Errors and exit codes, For AI agents                                             |
@@ -115,5 +114,5 @@ nix fmt                      # treefmt: rustfmt + nixfmt + prettier (also the pr
 - `auth::from_profile` order is oauth > token/token_command > basic, so `--token` cannot turn an OAuth profile into token auth.
 - `*_command` secrets run as `sh -c "<args joined by spaces>"` at request time; a non-zero exit or empty output is an auth error.
 - No HTTP timeouts and no retries except the single OAuth 401 refetch; fanout spawns one task per profile with no concurrency cap.
-- `tokens.json` read-modify-writes (store after a fetch, invalidate after a 401) go through `token_cache::update`, which holds an in-process mutex plus an exclusive lock on the `tokens.json.lock` sidecar, so parallel profiles and parallel gcli processes keep each other's tokens. Plain lookups take no lock: every write is an atomic rename.
+- `tokens.json` read-modify-writes (store after a fetch, invalidate after a 401) go through `auth::token_cache::update`, which holds an in-process mutex plus an exclusive lock on the `tokens.json.lock` sidecar, so parallel profiles and parallel gcli processes keep each other's tokens. Plain lookups take no lock: every write is an atomic rename.
 - Cached tokens sit under `<profile>:<client_id>` in `tokens.json` (tests pin that layout), but each entry stores its full `TokenKey` (profile, client_id, token_url, audience, scopes) and is reused only on an exact match; `profile remove` forgets the profile's tokens. A cache written before entries carried their key reads as empty.

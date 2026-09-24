@@ -3,7 +3,7 @@
 
 use super::OAuthSource;
 use super::secret::exec_command;
-use crate::token_cache::{self, CacheEntry, TokenKey};
+use super::token_cache::{self, CacheEntry, TokenKey};
 use crate::{Result, error::Error};
 
 pub async fn get_oauth_token(source: &OAuthSource, http: &reqwest::Client) -> Result<String> {

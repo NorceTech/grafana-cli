@@ -1,10 +1,10 @@
 use crate::Result;
+use crate::auth::token_cache;
 use crate::client::BaseUrl;
 use crate::commands::CommandOutput;
 use crate::config::{Config, OAuthConfig, Profile};
 use crate::error::Error;
 use crate::output::OutputMode;
-use crate::token_cache;
 use serde_json::{Value, json};
 use std::path::Path;
 
