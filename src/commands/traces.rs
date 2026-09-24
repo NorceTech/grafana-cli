@@ -1,9 +1,8 @@
 use crate::Result;
 use crate::client::{Datasource, GrafanaClient};
-use crate::commands::{CommandOutput, QueryWindow};
+use crate::commands::{Bounds, CommandOutput, QueryWindow, Windowed};
 use crate::datasource::{self, Kind};
 use crate::output::OutputMode;
-use crate::timeutil::resolve_window;
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::{Value, json};
 
@@ -35,10 +34,11 @@ impl TracesCmd {
         client: &GrafanaClient,
         profile: &str,
         mode: OutputMode,
+        bounds: Bounds,
     ) -> Result<CommandOutput> {
         match self {
             Self::Get(args) => get(client, profile, mode, args).await,
-            Self::Search(args) => search(client, profile, mode, args).await,
+            Self::Search(args) => search(client, profile, mode, Windowed { args, bounds }).await,
         }
     }
 }
@@ -139,15 +139,13 @@ pub async fn search(
     client: &GrafanaClient,
     _profile: &str,
     mode: OutputMode,
-    args: &SearchArgs,
+    search: Windowed<'_, SearchArgs>,
 ) -> Result<CommandOutput> {
-    let window = &args.window;
-    let ds = resolve_ds(client, window.datasource.as_deref()).await?;
-    let (start, end) = resolve_window(
-        window.since.as_deref(),
-        window.from.as_deref(),
-        window.to.as_deref(),
-    )?;
+    let Windowed {
+        args,
+        bounds: Bounds { start, end },
+    } = search;
+    let ds = resolve_ds(client, args.window.datasource.as_deref()).await?;
     // Tempo parses start/end with strconv.ParseInt: whole seconds only, a
     // fraction is a 400. Floor the start and ceil the end to cover the window.
     let end_secs = end.timestamp() + i64::from(end.timestamp_subsec_nanos() > 0);

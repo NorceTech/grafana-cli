@@ -1,9 +1,9 @@
 use crate::Result;
 use crate::client::{Datasource, GrafanaClient, Reply};
-use crate::commands::{CommandOutput, QueryWindow, success_data};
+use crate::commands::{Bounds, CommandOutput, QueryWindow, Windowed, success_data};
 use crate::datasource::{self, Kind};
 use crate::output::{LogRecord, OutputMode};
-use crate::timeutil::{resolve_window, to_ns_string};
+use crate::timeutil::to_ns_string;
 use chrono::{DateTime, SecondsFormat};
 use serde::Deserialize;
 use serde_json::Value;
@@ -56,12 +56,32 @@ impl LogsCmd {
         client: &GrafanaClient,
         profile: &str,
         mode: OutputMode,
+        bounds: Bounds,
     ) -> Result<CommandOutput> {
         match self {
-            Self::Search(args) => search(client, profile, mode, args).await,
-            Self::Labels { window } => labels(client, profile, window).await,
+            Self::Search(args) => search(client, profile, mode, Windowed { args, bounds }).await,
+            Self::Labels { window } => {
+                labels(
+                    client,
+                    profile,
+                    Windowed {
+                        args: window,
+                        bounds,
+                    },
+                )
+                .await
+            }
             Self::LabelValues { label, window } => {
-                label_values(client, profile, label, window).await
+                label_values(
+                    client,
+                    profile,
+                    label,
+                    Windowed {
+                        args: window,
+                        bounds,
+                    },
+                )
+                .await
             }
         }
     }
@@ -70,16 +90,15 @@ impl LogsCmd {
 /// Window bounds (ns strings) + the resolved Loki datasource for a query.
 async fn loki_context(
     client: &GrafanaClient,
-    window: &QueryWindow,
+    window: Windowed<'_, QueryWindow>,
 ) -> Result<(String, String, Datasource)> {
-    let (start, end) = resolve_window(
-        window.since.as_deref(),
-        window.from.as_deref(),
-        window.to.as_deref(),
-    )?;
     let all = client.datasources().await?;
-    let ds = datasource::resolve(&all, Kind::Loki, window.datasource.as_deref())?;
-    Ok((to_ns_string(start), to_ns_string(end), ds.clone()))
+    let ds = datasource::resolve(&all, Kind::Loki, window.args.datasource.as_deref())?;
+    Ok((
+        to_ns_string(window.bounds.start),
+        to_ns_string(window.bounds.end),
+        ds.clone(),
+    ))
 }
 
 /// The names in a `labels` or `label/{label}/values` reply.
@@ -95,9 +114,14 @@ pub async fn search(
     client: &GrafanaClient,
     profile: &str,
     mode: OutputMode,
-    args: &SearchArgs,
+    search: Windowed<'_, SearchArgs>,
 ) -> Result<CommandOutput> {
-    let (start, end, ds) = loki_context(client, &args.window).await?;
+    let Windowed { args, bounds } = search;
+    let window = Windowed {
+        args: &args.window,
+        bounds,
+    };
+    let (start, end, ds) = loki_context(client, window).await?;
     let reply = client
         .proxy_request(
             &ds.uid,
@@ -188,7 +212,7 @@ fn json_string_array(names: Vec<String>) -> Value {
 pub async fn labels(
     client: &GrafanaClient,
     _profile: &str,
-    window: &QueryWindow,
+    window: Windowed<'_, QueryWindow>,
 ) -> Result<CommandOutput> {
     let (start, end, ds) = loki_context(client, window).await?;
     let reply = client
@@ -207,7 +231,7 @@ pub async fn label_values(
     client: &GrafanaClient,
     _profile: &str,
     label: &str,
-    window: &QueryWindow,
+    window: Windowed<'_, QueryWindow>,
 ) -> Result<CommandOutput> {
     let (start, end, ds) = loki_context(client, window).await?;
     let reply = client

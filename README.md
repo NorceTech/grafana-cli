@@ -366,6 +366,8 @@ Exit codes:
 | 1    | HTTP error, malformed response, invalid URL, I/O error. Also: a multi-profile run where all failed.           |
 | 2    | Config, auth or datasource resolution error (unknown profile, ambiguous datasource, bad time arguments, ...). |
 
+A bad time window (`--since`, `--from`, `--to`) fails before any profile runs: one `config` error and exit code 2, even when several profiles are selected.
+
 A 401 while using token or basic auth fails fast with `kind: "http"`, `status: 401`. OAuth profiles retry once with a fresh token first.
 
 ## Multiple instances at once

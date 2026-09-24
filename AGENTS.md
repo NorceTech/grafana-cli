@@ -45,7 +45,7 @@ grafana-cli/
 | New error kind or exit code            | `src/error.rs`                              | `emit_json_error` + `exit_code` + their tests + README table                                            |
 | Profile selection, env vars            | `src/{environment,fanout,config}.rs`        | see NOTES                                                                                               |
 | Auth modes, OAuth token cache          | `src/{auth,token_cache,client}.rs`          |                                                                                                         |
-| Time windows                           | `src/timeutil.rs`                           |                                                                                                         |
+| Time windows                           | `src/timeutil.rs`                           | resolved once per invocation, before fanout, by `Query::resolve` (`src/commands/mod.rs`)                |
 | Integration tests                      | `tests/`                                    | own AGENTS.md                                                                                           |
 | User-facing contract                   | `README.md`                                 | sections Output modes, Errors and exit codes, For AI agents                                             |
 
@@ -53,20 +53,20 @@ grafana-cli/
 
 Refs = ast-grep AST-node references across `src/` and `tests/`, definition excluded (rust-analyzer returned no references).
 
-| Symbol                         | Type   | Location                  | Refs | Role                                                                                 |
-| ------------------------------ | ------ | ------------------------- | ---- | ------------------------------------------------------------------------------------ |
-| `CommandOutput`                | enum   | `src/commands/mod.rs:13`  | 64   | every command's result; `render.rs` matches on it                                    |
-| `OutputMode`                   | enum   | `src/output.rs:6`         | 53   | json/table, resolved once in `app::run`                                              |
-| `Config`                       | struct | `src/config.rs:39`        | ~31  | config.toml model; profile CRUD and resolution                                       |
-| `GrafanaClient`                | struct | `src/client.rs:66`        | 31   | HTTP facade: `health`, `datasources`, `proxy_request`                                |
-| `AuthProvider`                 | enum   | `src/auth.rs:6`           | 30   | Token / Basic / OAuth, built by `auth::from_profile`                                 |
-| `resolve_window`               | fn     | `src/timeutil.rs:4`       | 20   | `--since` / `--from` / `--to` -> UTC bounds                                          |
-| `Datasource`                   | struct | `src/client.rs:9`         | 20   | `/api/datasources` row fed to `datasource::resolve`                                  |
-| `Query`                        | enum   | `src/commands/mod.rs:52`  | 18   | clap subcommands that fan out; `Query::run` delegates to each family's `run`         |
-| `QueryWindow`                  | struct | `src/commands/mod.rs:26`  | 15   | clap `Args`: window + `--datasource`, flattened into query subcommands               |
-| `resolve_profiles`             | fn     | `src/fanout.rs:8`         | 9    | decides which profiles run                                                           |
-| `emit_json_error`, `exit_code` | fn     | `src/error.rs:86`, `:110` | 9, 9 | the error contract                                                                   |
-| `dispatch`                     | fn     | `src/app.rs:39`           | 1    | config -> profiles -> overrides -> auth -> client -> `Query::run` (fanout) -> render |
+| Symbol                         | Type   | Location                  | Refs | Role                                                                                                                    |
+| ------------------------------ | ------ | ------------------------- | ---- | ----------------------------------------------------------------------------------------------------------------------- |
+| `CommandOutput`                | enum   | `src/commands/mod.rs:15`  | 64   | every command's result; `render.rs` matches on it                                                                       |
+| `OutputMode`                   | enum   | `src/output.rs:6`         | 53   | json/table, resolved once in `app::run`                                                                                 |
+| `Config`                       | struct | `src/config.rs:39`        | ~31  | config.toml model; profile CRUD and resolution                                                                          |
+| `GrafanaClient`                | struct | `src/client.rs:66`        | 31   | HTTP facade: `health`, `datasources`, `proxy_request`                                                                   |
+| `AuthProvider`                 | enum   | `src/auth.rs:6`           | 30   | Token / Basic / OAuth, built by `auth::from_profile`                                                                    |
+| `resolve_window`               | fn     | `src/timeutil.rs:4`       | 20   | `--since` / `--from` / `--to` -> UTC bounds                                                                             |
+| `Datasource`                   | struct | `src/client.rs:9`         | 20   | `/api/datasources` row fed to `datasource::resolve`                                                                     |
+| `Query`                        | enum   | `src/commands/mod.rs:69`  | 18   | clap subcommands that fan out; `Query::resolve` fixes the window once, `Resolved::run` delegates to each family's `run` |
+| `QueryWindow`                  | struct | `src/commands/mod.rs:28`  | 15   | clap `Args`: window + `--datasource`, flattened into query subcommands                                                  |
+| `resolve_profiles`             | fn     | `src/fanout.rs:8`         | 9    | decides which profiles run                                                                                              |
+| `emit_json_error`, `exit_code` | fn     | `src/error.rs:86`, `:110` | 9, 9 | the error contract                                                                                                      |
+| `dispatch`                     | fn     | `src/app.rs:39`           | 1    | config -> profiles -> overrides -> `Query::resolve` -> auth -> client -> `Resolved::run` (fanout) -> render             |
 
 ## CONVENTIONS
 

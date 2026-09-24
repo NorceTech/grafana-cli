@@ -217,6 +217,53 @@ async fn s17b_all_profiles_reject_an_env_override() {
     );
 }
 
+// A bad time window is the invocation's fault, not a profile's: it is one
+// config error before fanout, exit 2, and no instance is contacted.
+#[tokio::test]
+async fn s8f_bad_window_fails_once_before_fanout() {
+    let m1 = MockServer::start().await;
+    let m2 = MockServer::start().await;
+    for server in [&m1, &m2] {
+        datasources_json(json!([])).expect(0).mount(server).await;
+    }
+    let config = fixture_config(&two_profile_toml(&m1.uri(), &m2.uri()));
+
+    let out = spawn_gcli(
+        &[
+            "--profile",
+            "a,b",
+            "logs",
+            "search",
+            "{x=\"y\"}",
+            "--since",
+            "bogus",
+        ],
+        &[("GCLI_CONFIG_DIR", config.path().to_str().unwrap())],
+    );
+
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        out.stdout.is_empty(),
+        "{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    let stderr = stderr_lines(&out);
+    assert_eq!(stderr.len(), 1, "one error line: {stderr:?}");
+    assert_eq!(stderr[0]["error"]["kind"], "config");
+    m1.verify().await;
+    m2.verify().await;
+    write_transcript(
+        "s8f_bad_window.txt",
+        "gcli --profile a,b logs search '{x=\"y\"}' --since bogus",
+        &out,
+    );
+}
+
 #[tokio::test]
 async fn s8e_fanout_runs_in_parallel() {
     let m1 = MockServer::start().await;

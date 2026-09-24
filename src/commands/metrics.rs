@@ -1,9 +1,9 @@
 use crate::Result;
 use crate::client::{Datasource, GrafanaClient, Reply};
-use crate::commands::{CommandOutput, QueryWindow, success_data};
+use crate::commands::{Bounds, CommandOutput, QueryWindow, Windowed, success_data};
 use crate::datasource::Kind;
 use crate::output::OutputMode;
-use crate::timeutil::{default_step_secs, resolve_window, to_epoch_secs};
+use crate::timeutil::{default_step_secs, to_epoch_secs};
 use crate::{Error, datasource};
 use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
@@ -38,10 +38,11 @@ impl MetricsCmd {
         client: &GrafanaClient,
         profile: &str,
         mode: OutputMode,
+        bounds: Bounds,
     ) -> Result<CommandOutput> {
         match self {
             Self::Instant(args) => instant(client, profile, mode, args).await,
-            Self::Range(args) => range(client, profile, mode, args).await,
+            Self::Range(args) => range(client, profile, mode, Windowed { args, bounds }).await,
         }
     }
 }
@@ -193,15 +194,13 @@ pub async fn range(
     client: &GrafanaClient,
     _profile: &str,
     mode: OutputMode,
-    args: &RangeArgs,
+    range: Windowed<'_, RangeArgs>,
 ) -> Result<CommandOutput> {
-    let window = &args.window;
-    let ds = resolve_ds(client, window.datasource.as_deref()).await?;
-    let (start, end) = resolve_window(
-        window.since.as_deref(),
-        window.from.as_deref(),
-        window.to.as_deref(),
-    )?;
+    let Windowed {
+        args,
+        bounds: Bounds { start, end },
+    } = range;
+    let ds = resolve_ds(client, args.window.datasource.as_deref()).await?;
     let step_secs = match args.step.as_deref() {
         Some(s) => {
             let secs = humantime::parse_duration(s)

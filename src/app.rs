@@ -58,8 +58,18 @@ async fn dispatch(cli: &Cli, mode: OutputMode, query: &Query, env: Environment) 
         Ok(p) => p,
         Err(e) => return fail(cli.profile.as_deref(), &e),
     };
+    // One time window for every profile: a bad one is a single error.
+    let query = match query.resolve() {
+        Ok(resolved) => Arc::new(resolved),
+        Err(e) => {
+            let label = match profiles.as_slice() {
+                [(name, _)] => Some(name.as_str()),
+                _ => cli.profile.as_deref(),
+            };
+            return fail(label, &e);
+        }
+    };
     let http = reqwest::Client::new();
-    let query = Arc::new(query.clone());
     let cache_dir = env.cache_dir;
     let results = gcli_lib::fanout::run(profiles, move |name, profile| {
         let query = Arc::clone(&query);
