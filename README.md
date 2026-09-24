@@ -83,7 +83,7 @@ The `GRAFANA_CLI_URL`, `GRAFANA_CLI_TOKEN`, `GRAFANA_CLI_USERNAME` and `GRAFANA_
 
 **Directories.** `GCLI_CONFIG_DIR` overrides where `config.toml` is read and written. `GCLI_CACHE_DIR` overrides where the OAuth token cache (`tokens.json`) lives; the default is the platform cache directory (`~/.cache/grafana-cli` on Linux, `~/Library/Caches/grafana-cli` on macOS).
 
-**Security.** Prefer the `*_command` variants (`token_command`, `password_command`, `client_secret_command`) over plaintext secrets. The command runs through `sh -c` at request time and its trimmed stdout becomes the secret, so credentials can come from a password manager, a file or an agent instead of the config file. Note that this also means anyone who can edit your config file can run arbitrary shell commands as you; that is by design and scoped to your own machine.
+**Security.** Prefer the `*_command` variants (`token_command`, `password_command`, `client_secret_command`) over plaintext secrets. The command runs at request time and its trimmed stdout becomes the secret, so credentials can come from a password manager, a file or an agent instead of the config file. A single-element command is a shell line run through `sh -c`, so `~` expansion and pipes work; an array of two or more elements is executed directly as argv, without a shell, so elements containing spaces (like `op://vault/Grafana Prod/token`) survive intact. Note that this also means anyone who can edit your config file can run arbitrary commands as you; that is by design and scoped to your own machine.
 
 ## Profiles
 
@@ -132,7 +132,7 @@ Options:
           Print help
 ```
 
-`--token-command`, `--password-command` and `--client-secret-command` take a comma-separated command (`--token-command "cat,~/.tokens/grafana"`). `--scope` is repeatable and also accepts commas. Adding a profile with OAuth flags (`--token-url`, `--client-id`, ...) writes the `oauth` table for you.
+`--token-command`, `--password-command` and `--client-secret-command` take a comma-separated command (`--token-command "cat ~/.tokens/grafana"`); the comma-separated pieces become the command's elements, and a single element is one shell line run through `sh -c` (`~`, pipes) while two or more elements are executed directly as argv, spaces kept intact. `--scope` is repeatable and also accepts commas. Adding a profile with OAuth flags (`--token-url`, `--client-id`, ...) writes the `oauth` table for you.
 
 Lifecycle, with real output:
 

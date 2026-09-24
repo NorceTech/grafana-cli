@@ -22,7 +22,7 @@ grafana-cli/
 │   ├── client.rs      # GrafanaClient: auth headers, OAuth 401 retry, proxy GET
 │   ├── config.rs      # config.toml model, path, load/save, profile resolution
 │   ├── environment.rs # Environment (the only env reader), ProfileOverrides
-│   ├── auth/          # mod.rs AuthProvider + from_profile, oauth.rs token fetch, token_cache.rs tokens.json (TokenKey, locked store/remove/forget), secret.rs sh -c commands
+│   ├── auth/          # mod.rs AuthProvider + from_profile, oauth.rs token fetch, token_cache.rs tokens.json (TokenKey, locked store/remove/forget), secret.rs secret helper commands (single element sh -c, multi-element argv)
 │   ├── secret_file.rs # write_secret: atomic owner-only writes of secret files
 │   ├── fanout.rs      # --profile a,b / --all-profiles, overrides, JoinSet, exit aggregation
 │   ├── datasource.rs  # Kind enum; pick: flag > sole of type > unique default
@@ -112,7 +112,7 @@ nix fmt                      # treefmt: rustfmt + nixfmt + prettier (also the pr
 - `GRAFANA_CLI_{URL,TOKEN,USERNAME,PASSWORD}` override the selected profile and the `--url/--token/--username/--password` flags win over them, but only when exactly one profile is selected: with several (`--profile a,b`, `--all-profiles`) any set override is `Error::Config` (exit 2) naming it, so one host never receives every profile's credentials. `app::dispatch` calls `fanout::apply_overrides` after `resolve_profiles`, which (like `Config::active_profile`) returns profiles as stored.
 - Env vars are read by hand, only in `Environment::from_process` (`src/environment.rs`), and do not appear in `--help`.
 - `auth::from_profile` order is oauth > token/token_command > basic, so `--token` cannot turn an OAuth profile into token auth.
-- `*_command` secrets run as `sh -c "<args joined by spaces>"` at request time; a non-zero exit or empty output is an auth error.
+- `*_command` secrets: a single-element array runs as `sh -c <line>` (tilde expansion and pipes), two or more elements execute directly as argv without a shell, so elements with spaces survive; a non-zero exit or empty output is an auth error.
 - HTTP requests are bounded by the global `--timeout` (default `60s`, humantime, parsed once in `app::run`; an unparsable value is a config error): the shared reqwest client gets `connect_timeout(10s)` plus `read_timeout(timeout)`, an idle timer that resets on every read, so a slow but streaming response completes while a silent server fails as `Transport` (kind io, exit 1). No retries except the single OAuth 401 refetch; fanout spawns one task per profile with no concurrency cap.
 - `tokens.json` read-modify-writes (store after a fetch, invalidate after a 401) go through `auth::token_cache::update`, which holds an in-process mutex plus an exclusive lock on the `tokens.json.lock` sidecar, so parallel profiles and parallel gcli processes keep each other's tokens. Plain lookups take no lock: every write is an atomic rename.
 - Cached tokens sit under `<profile>:<client_id>` in `tokens.json` (tests pin that layout), but each entry stores its full `TokenKey` (profile, client_id, token_url, audience, scopes) and is reused only on an exact match; `profile remove` forgets the profile's tokens. A cache written before entries carried their key reads as empty.

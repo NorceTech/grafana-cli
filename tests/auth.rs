@@ -265,6 +265,40 @@ async fn s13_env_token_overrides_selected_profile_and_flag_beats_env() {
     );
 }
 
+// A multi-element token_command runs as argv, not a joined shell line, so
+// an element containing spaces reaches the command intact and becomes the
+// bearer token verbatim.
+#[tokio::test]
+async fn s24_multi_element_token_command_runs_as_argv() {
+    let server = wiremock::MockServer::start().await;
+    health_auth_mock("Bearer tok from argv")
+        .expect(1)
+        .mount(&server)
+        .await;
+    let config = fixture_config(&format!(
+        "current_profile = \"p\"\n\
+         [profiles.p]\n\
+         url = \"{}\"\n\
+         token_command = [\"printf\", \"%s\", \"tok from argv\"]\n",
+        server.uri()
+    ));
+    let cache = tempfile::tempdir().unwrap();
+    let out = spawn_gcli(&["health"], &envs(&config, &cache));
+
+    assert!(
+        out.status.success(),
+        "exit={:?} stderr={}",
+        out.status.code(),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    server.verify().await;
+    write_transcript(
+        "s24_argv_token_command.txt",
+        "gcli health (token_command = [\"printf\", \"%s\", \"tok from argv\"])",
+        &out,
+    );
+}
+
 // GRAFANA_CLI_PROFILE beats current_profile, and GRAFANA_CLI_URL, _USERNAME and
 // _PASSWORD replace the selected profile's url and basic credentials. Both file
 // urls are dead, so only the env url can reach the mock, and only as u:p.
