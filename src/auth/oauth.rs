@@ -274,6 +274,56 @@ mod tests {
         server.verify().await;
     }
 
+    // A client_secret_command's output is what reaches the token POST body,
+    // exactly like a configured client_secret would.
+    #[tokio::test]
+    async fn oauth_client_secret_command_output_reaches_the_token_post_body() {
+        let dir = cache_dir();
+
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path("/token"))
+            .and(wiremock::matchers::body_string_contains(
+                "client_secret=from-command",
+            ))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({
+                "access_token": "tok", "expires_in": 3600
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let mut cfg = oauth_config(&format!("{}/token", server.uri()));
+        cfg.client_secret = None;
+        cfg.client_secret_command = Some(vec!["echo from-command".into()]);
+
+        let tok = get_oauth_token(&source(&dir, cfg), &reqwest::Client::new())
+            .await
+            .unwrap();
+
+        assert_eq!(tok, "tok");
+        server.verify().await;
+    }
+
+    // A failing client_secret_command is an oauth auth error, raised before
+    // any token request is sent (token_url unroutable on purpose).
+    #[tokio::test]
+    async fn oauth_client_secret_command_failure_is_auth_kind_oauth() {
+        let dir = cache_dir();
+        let mut cfg = oauth_config("http://127.0.0.1:1/token");
+        cfg.client_secret = None;
+        cfg.client_secret_command = Some(vec!["exit 3".into()]);
+
+        let e = get_oauth_token(&source(&dir, cfg), &reqwest::Client::new())
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(&e, Error::Auth { kind, .. } if kind == "oauth"),
+            "{e:?}"
+        );
+    }
+
     #[tokio::test]
     async fn oauth_fetch_error_is_auth_kind() {
         let dir = cache_dir();
