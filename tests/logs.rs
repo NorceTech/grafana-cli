@@ -769,6 +769,107 @@ async fn s32_logs_instant_log_query_plain_text_400_surfaces_the_message() {
     );
 }
 
+// --match scopes label discovery to a selector, sent as Loki's query=
+// parameter next to the window bounds.
+#[tokio::test]
+async fn s33_logs_labels_match_scopes_the_query() {
+    let (start_ns, end_ns) = window_ns(FROM, TO);
+    let server = MockServer::start().await;
+    loki_datasources_mock().expect(1).mount(&server).await;
+    Mock::given(method("GET"))
+        .and(path("/api/datasources/proxy/uid/loki1/loki/api/v1/labels"))
+        .and(query_param("query", "{service=\"checkout\"}"))
+        .and(query_param("start", start_ns.as_str()))
+        .and(query_param("end", end_ns.as_str()))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "status": "success",
+            "data": ["job", "level"]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = token_config(&server.uri());
+    let out = run_logs(
+        &config,
+        &[
+            "logs",
+            "labels",
+            "--match",
+            "{service=\"checkout\"}",
+            "--from",
+            FROM,
+            "--to",
+            TO,
+        ],
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "[\"job\",\"level\"]"
+    );
+    server.verify().await;
+    write_transcript(
+        "s33_logs_labels_match.txt",
+        "gcli logs labels --match '{service=\"checkout\"}' --from 2026-08-28T14:00:00Z --to 2026-08-28T15:00:00Z",
+        &out,
+    );
+}
+
+// Scoped label values, including Loki's empty answer that leaves `data`
+// out entirely.
+#[tokio::test]
+async fn s33_logs_label_values_match_scopes_the_query() {
+    let (start_ns, end_ns) = window_ns(FROM, TO);
+    let server = MockServer::start().await;
+    loki_datasources_mock().expect(1).mount(&server).await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/api/datasources/proxy/uid/loki1/loki/api/v1/label/job/values",
+        ))
+        .and(query_param("query", "{service=\"cart\"}"))
+        .and(query_param("start", start_ns.as_str()))
+        .and(query_param("end", end_ns.as_str()))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"status": "success"})))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = token_config(&server.uri());
+    let out = run_logs(
+        &config,
+        &[
+            "logs",
+            "label-values",
+            "job",
+            "--match",
+            "{service=\"cart\"}",
+            "--from",
+            FROM,
+            "--to",
+            TO,
+        ],
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "[]");
+    server.verify().await;
+    write_transcript(
+        "s33_logs_label_values_match.txt",
+        "gcli logs label-values job --match '{service=\"cart\"}' --from 2026-08-28T14:00:00Z --to 2026-08-28T15:00:00Z",
+        &out,
+    );
+}
+
 // A --since so long that chrono cannot subtract it must not panic the CLI:
 // one config error naming the duration, and no request.
 #[tokio::test]

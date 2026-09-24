@@ -357,7 +357,7 @@ mod tests {
             })
         ));
         let Commands::Query(Query::Logs {
-            cmd: LogsCmd::LabelValues { label, window },
+            cmd: LogsCmd::LabelValues { label, window, .. },
         }) = parse(&[
             "logs",
             "label-values",

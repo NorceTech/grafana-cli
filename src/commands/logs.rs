@@ -17,11 +17,16 @@ pub enum LogsCmd {
     Labels {
         #[command(flatten)]
         window: QueryWindow,
+        // The selector label discovery is scoped to, sent as Loki's query=.
+        #[arg(long, value_name = "SELECTOR")]
+        r#match: Option<String>,
     },
     LabelValues {
         label: String,
         #[command(flatten)]
         window: QueryWindow,
+        #[arg(long, value_name = "SELECTOR")]
+        r#match: Option<String>,
     },
 }
 
@@ -77,7 +82,7 @@ impl LogsCmd {
         match self {
             Self::Search(args) => search(client, profile, mode, Windowed { args, bounds }).await,
             Self::Instant(args) => instant(client, profile, mode, args).await,
-            Self::Labels { window } => {
+            Self::Labels { window, r#match } => {
                 labels(
                     client,
                     profile,
@@ -85,10 +90,15 @@ impl LogsCmd {
                         args: window,
                         bounds,
                     },
+                    r#match.as_deref(),
                 )
                 .await
             }
-            Self::LabelValues { label, window } => {
+            Self::LabelValues {
+                label,
+                window,
+                r#match,
+            } => {
                 label_values(
                     client,
                     profile,
@@ -97,6 +107,7 @@ impl LogsCmd {
                         args: window,
                         bounds,
                     },
+                    r#match.as_deref(),
                 )
                 .await
             }
@@ -300,14 +311,15 @@ pub async fn labels(
     client: &GrafanaClient,
     _profile: &str,
     window: Windowed<'_, QueryWindow>,
+    selector: Option<&str>,
 ) -> Result<CommandOutput> {
     let (start, end, ds) = loki_context(client, window).await?;
+    let mut pairs = vec![("start", start), ("end", end)];
+    if let Some(selector) = selector {
+        pairs.push(("query", selector.to_string()));
+    }
     let reply = client
-        .proxy_request(
-            &ds.uid,
-            "loki/api/v1/labels",
-            &[("start", start), ("end", end)],
-        )
+        .proxy_request(&ds.uid, "loki/api/v1/labels", &pairs)
         .await?;
     Ok(CommandOutput::Json(json_string_array(string_array(
         &reply,
@@ -336,13 +348,18 @@ pub async fn label_values(
     _profile: &str,
     label: &str,
     window: Windowed<'_, QueryWindow>,
+    selector: Option<&str>,
 ) -> Result<CommandOutput> {
     let (start, end, ds) = loki_context(client, window).await?;
+    let mut pairs = vec![("start", start), ("end", end)];
+    if let Some(selector) = selector {
+        pairs.push(("query", selector.to_string()));
+    }
     let reply = client
         .proxy_request(
             &ds.uid,
             &format!("loki/api/v1/label/{label}/values"),
-            &[("start", start), ("end", end)],
+            &pairs,
         )
         .await?;
     Ok(CommandOutput::Json(json_string_array(string_array(

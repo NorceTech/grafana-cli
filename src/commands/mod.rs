@@ -167,7 +167,7 @@ impl Query {
                 cmd: LogsCmd::Search(args),
             } => Some(&args.window),
             Self::Logs {
-                cmd: LogsCmd::Labels { window } | LogsCmd::LabelValues { window, .. },
+                cmd: LogsCmd::Labels { window, .. } | LogsCmd::LabelValues { window, .. },
             } => Some(window),
             Self::Metrics {
                 cmd: MetricsCmd::Range(args),
@@ -248,6 +248,7 @@ mod tests {
                     to: None,
                     datasource: None,
                 },
+                r#match: None,
             },
         };
 
@@ -287,6 +288,7 @@ mod tests {
             cmd: logs::LogsCmd::LabelValues {
                 label: "../../api/admin/users".into(),
                 window: no_window(),
+                r#match: None,
             },
         };
 
