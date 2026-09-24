@@ -84,3 +84,38 @@ async fn s23_invalid_timeout_is_a_config_error() {
         &out,
     );
 }
+
+// The same --timeout bounds secret helper commands: a token_command that
+// never finishes is killed and reported as an auth error naming the command
+// and the timeout, without waiting for the command to end on its own.
+#[tokio::test]
+async fn s25_timeout_bounds_secret_helper_commands() {
+    let server = MockServer::start().await;
+    health_mock().expect(0).mount(&server).await;
+    let config = fixture_config(&format!(
+        "current_profile = \"p\"\n\
+         [profiles.p]\n\
+         url = \"{}\"\n\
+         token_command = [\"sleep\", \"5\"]\n",
+        server.uri()
+    ));
+
+    let out = spawn_gcli(
+        &["--timeout", "300ms", "health"],
+        &[("GCLI_CONFIG_DIR", config.path().to_str().unwrap())],
+    );
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2), "stderr={stderr}");
+    let err: Value = serde_json::from_str(stderr.trim()).expect("stderr JSON");
+    assert_eq!(err["error"]["kind"], "auth");
+    let message = err["error"]["message"].as_str().unwrap_or_default();
+    assert!(message.contains("sleep 5"), "{stderr}");
+    assert!(message.contains("timed out"), "{stderr}");
+    server.verify().await;
+    write_transcript(
+        "s25_timeout_helper_command.txt",
+        "gcli --timeout 300ms health (token_command = [\"sleep\", \"5\"])",
+        &out,
+    );
+}

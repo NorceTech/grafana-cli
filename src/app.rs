@@ -107,7 +107,8 @@ async fn dispatch(
             // The url is checked before any auth runs, so a secret-fetching
             // command never executes for a profile that cannot be queried.
             let base = gcli_lib::client::BaseUrl::parse(&profile.url)?;
-            let auth = gcli_lib::auth::from_profile(&name, &profile, cache_dir.as_deref())?;
+            let auth = gcli_lib::auth::from_profile(&name, &profile, cache_dir.as_deref(), timeout)
+                .await?;
             let client = GrafanaClient::new(base.as_str(), auth, http)?;
             query.run(&client, &name, mode).await
         }

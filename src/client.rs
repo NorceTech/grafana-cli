@@ -551,6 +551,7 @@ mod tests {
                 audience: None,
             },
             cache_path: dir.path().join("tokens.json"),
+            secret_timeout: std::time::Duration::from_secs(10),
         });
         let out = client(&server.uri(), auth).health().await.unwrap();
         assert_eq!(out["version"], "1");

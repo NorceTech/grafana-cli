@@ -21,7 +21,7 @@ pub async fn get_oauth_token(source: &OAuthSource, http: &reqwest::Client) -> Re
     };
     let secret = match (&config.client_secret, &config.client_secret_command) {
         (Some(s), _) => Some(s.clone()),
-        (None, Some(cmd)) => Some(exec_command(cmd, "oauth")?),
+        (None, Some(cmd)) => Some(exec_command(cmd, "oauth", source.secret_timeout).await?),
         _ => None,
     };
     let mut form: Vec<(String, String)> = vec![
@@ -109,6 +109,7 @@ mod tests {
             profile_name: "p".into(),
             config,
             cache_path: dir.path().join("tokens.json"),
+            secret_timeout: std::time::Duration::from_secs(10),
         }
     }
 
