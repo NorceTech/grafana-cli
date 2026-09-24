@@ -148,6 +148,68 @@ async fn s11c_error_schema_malformed_reply() {
     );
 }
 
+// kind "url": a profile url, here via --url, that is not an absolute
+// http(s) address is rejected before anything is requested.
+#[tokio::test]
+async fn s11d_error_schema_invalid_url() {
+    let config = fixture_config(
+        "current_profile = \"p\"\n[profiles.p]\nurl = \"http://127.0.0.1:1\"\ntoken = \"t\"\n",
+    );
+
+    let out = spawn_gcli(
+        &["--url", "not-a-url", "health"],
+        &[("GCLI_CONFIG_DIR", config.path().to_str().unwrap())],
+    );
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "stderr={stderr}");
+    let err: Value = serde_json::from_str(stderr.trim()).expect("stderr JSON");
+    assert_eq!(err["error"]["kind"], "url");
+    assert_eq!(err["error"]["profile"], "p");
+    assert!(
+        err["error"]["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("not-a-url"),
+        "{stderr}"
+    );
+    write_transcript("s11d_invalid_url.txt", "gcli --url not-a-url health", &out);
+}
+
+// GRAFANA_CLI_URL gets the same check: a non-http scheme is a url error and
+// the profile's own instance is never contacted.
+#[tokio::test]
+async fn s11e_env_url_with_a_foreign_scheme_is_rejected() {
+    let server = MockServer::start().await;
+    health_mock().expect(0).mount(&server).await;
+    let config = token_config(&server.uri());
+    let uri = "ftp://grafana.example.com".to_string();
+    let env = [
+        ("GCLI_CONFIG_DIR", config.path().to_str().unwrap()),
+        ("GRAFANA_CLI_URL", uri.as_str()),
+    ];
+
+    let out = spawn_gcli(&["health"], &env);
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "stderr={stderr}");
+    let err: Value = serde_json::from_str(stderr.trim()).expect("stderr JSON");
+    assert_eq!(err["error"]["kind"], "url");
+    assert!(
+        err["error"]["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("ftp"),
+        "{stderr}"
+    );
+    server.verify().await;
+    write_transcript(
+        "s11e_env_url_scheme.txt",
+        "GRAFANA_CLI_URL=ftp://grafana.example.com gcli health",
+        &out,
+    );
+}
+
 const HELP_TARGETS: &[&[&str]] = &[
     &[],
     &["profile"],

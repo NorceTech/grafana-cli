@@ -63,16 +63,37 @@ impl Reply {
     }
 }
 
+/// A profile's base URL: an absolute `http`/`https` address. `GrafanaClient`
+/// only ever requests from one of these, so a scheme-less or otherwise
+/// unusable url is `Error::Url` when the profile is added or the client is
+/// built, not a reqwest builder error at request time.
+#[derive(Debug)]
+pub struct BaseUrl(String);
+
+impl BaseUrl {
+    /// Parses `url`, rejecting anything but an absolute http(s) address, and
+    /// keeps the normalized form; the trailing slash a root url gains is
+    /// trimmed, as it always was.
+    pub fn parse(url: &str) -> Result<Self> {
+        let bad = |why: String| Error::Url(format!("'{url}': {why}"));
+        let parsed = reqwest::Url::parse(url).map_err(|e| bad(e.to_string()))?;
+        if !matches!(parsed.scheme(), "http" | "https") {
+            return Err(bad("scheme must be http or https".into()));
+        }
+        Ok(Self(parsed.to_string().trim_end_matches('/').to_string()))
+    }
+}
+
 pub struct GrafanaClient {
-    base_url: String,
+    base_url: BaseUrl,
     auth: AuthProvider,
     http: reqwest::Client,
 }
 
 impl GrafanaClient {
-    pub fn new(base_url: String, auth: AuthProvider, http: reqwest::Client) -> Self {
+    pub fn new(base_url: BaseUrl, auth: AuthProvider, http: reqwest::Client) -> Self {
         Self {
-            base_url: base_url.trim_end_matches('/').to_string(),
+            base_url,
             auth,
             http,
         }
@@ -113,7 +134,7 @@ impl GrafanaClient {
     }
 
     async fn get_json(&self, path: &str, query_pairs: &[(&str, String)]) -> Result<Reply> {
-        let url = format!("{}{path}", self.base_url);
+        let url = format!("{}{path}", self.base_url.0);
         let mut oauth_attempt = 0;
         loop {
             let response = self
@@ -188,7 +209,39 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn client(base: &str, auth: AuthProvider) -> GrafanaClient {
-        GrafanaClient::new(base.to_string(), auth, reqwest::Client::new())
+        GrafanaClient::new(
+            BaseUrl::parse(base).expect("fixture url"),
+            auth,
+            reqwest::Client::new(),
+        )
+    }
+
+    #[test]
+    fn base_urls_accept_absolute_http_addresses() {
+        for url in [
+            "http://grafana.example.com",
+            "https://grafana.example.com",
+            "https://grafana.example.com:3000",
+            "https://grafana.example.com/grafana/",
+        ] {
+            BaseUrl::parse(url).expect(url);
+        }
+    }
+
+    #[test]
+    fn base_urls_reject_anything_else_as_a_url_error() {
+        for url in [
+            "grafana.example.com",
+            "localhost:3000",
+            "ftp://grafana.example.com",
+            "http://",
+            "not a url",
+        ] {
+            let err = BaseUrl::parse(url).unwrap_err();
+
+            assert!(matches!(err, Error::Url(_)), "{url}: {err:?}");
+            assert!(err.to_string().contains(url), "{url}: {err}");
+        }
     }
 
     async fn mount_health_ok(server: &MockServer) {

@@ -76,8 +76,11 @@ async fn dispatch(cli: &Cli, mode: OutputMode, query: &Query, env: Environment) 
         let http = http.clone();
         let cache_dir = cache_dir.clone();
         async move {
+            // The url is checked before any auth runs, so a secret-fetching
+            // command never executes for a profile that cannot be queried.
+            let base = gcli_lib::client::BaseUrl::parse(&profile.url)?;
             let auth = gcli_lib::auth::from_profile(&name, &profile, cache_dir.as_deref())?;
-            let client = GrafanaClient::new(profile.url, auth, http);
+            let client = GrafanaClient::new(base, auth, http);
             query.run(&client, &name, mode).await
         }
     })

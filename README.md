@@ -356,6 +356,7 @@ Where `message` comes from for the kinds that talk to the instance:
 
 - `http`: a non-2xx reply. `message` is the upstream's own error text: the JSON `message` field (Grafana), else the JSON `error` field (Prometheus, Loki), else the response body as plain text (Loki and Tempo answer many errors in plain text), trimmed and cut to 500 characters. It is null only when the error response has an empty body.
 - `response`: a success status whose body gcli cannot use, either not JSON (an SSO proxy's HTML login page, say) or JSON of an unexpected shape. `status` is that reply's status; `message` says what was wrong, names the request path and content type, and quotes the start of the body.
+- `url`: the profile's url — set by `profile add`, `--url` or `GRAFANA_CLI_URL` — is not an absolute `http`/`https` address. `profile add` refuses to save it, and a query rejects it before contacting anything, so no credentials are spent.
 - `io`: a request that got no complete reply. `message` names the request path followed by the chain of causes, so a refused connection, a DNS failure and an untrusted TLS certificate read differently.
 
 Exit codes:

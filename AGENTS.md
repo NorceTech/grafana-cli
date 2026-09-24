@@ -53,20 +53,20 @@ grafana-cli/
 
 Refs = ast-grep AST-node references across `src/` and `tests/`, definition excluded (rust-analyzer returned no references).
 
-| Symbol                         | Type   | Location                  | Refs | Role                                                                                                                    |
-| ------------------------------ | ------ | ------------------------- | ---- | ----------------------------------------------------------------------------------------------------------------------- |
-| `CommandOutput`                | enum   | `src/commands/mod.rs:15`  | 64   | every command's result; `render.rs` matches on it                                                                       |
-| `OutputMode`                   | enum   | `src/output.rs:6`         | 53   | json/table, resolved once in `app::run`                                                                                 |
-| `Config`                       | struct | `src/config.rs:39`        | ~31  | config.toml model; profile CRUD and resolution                                                                          |
-| `GrafanaClient`                | struct | `src/client.rs:66`        | 31   | HTTP facade: `health`, `datasources`, `proxy_request`                                                                   |
-| `AuthProvider`                 | enum   | `src/auth.rs:6`           | 30   | Token / Basic / OAuth, built by `auth::from_profile`                                                                    |
-| `resolve_window`               | fn     | `src/timeutil.rs:4`       | 20   | `--since` / `--from` / `--to` -> UTC bounds                                                                             |
-| `Datasource`                   | struct | `src/client.rs:9`         | 20   | `/api/datasources` row fed to `datasource::resolve`                                                                     |
-| `Query`                        | enum   | `src/commands/mod.rs:69`  | 18   | clap subcommands that fan out; `Query::resolve` fixes the window once, `Resolved::run` delegates to each family's `run` |
-| `QueryWindow`                  | struct | `src/commands/mod.rs:28`  | 15   | clap `Args`: window + `--datasource`, flattened into query subcommands                                                  |
-| `resolve_profiles`             | fn     | `src/fanout.rs:8`         | 9    | decides which profiles run                                                                                              |
-| `emit_json_error`, `exit_code` | fn     | `src/error.rs:86`, `:110` | 9, 9 | the error contract                                                                                                      |
-| `dispatch`                     | fn     | `src/app.rs:39`           | 1    | config -> profiles -> overrides -> `Query::resolve` -> auth -> client -> `Resolved::run` (fanout) -> render             |
+| Symbol                         | Type   | Location                  | Refs | Role                                                                                                                            |
+| ------------------------------ | ------ | ------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `CommandOutput`                | enum   | `src/commands/mod.rs:15`  | 64   | every command's result; `render.rs` matches on it                                                                               |
+| `OutputMode`                   | enum   | `src/output.rs:6`         | 53   | json/table, resolved once in `app::run`                                                                                         |
+| `Config`                       | struct | `src/config.rs:39`        | ~31  | config.toml model; profile CRUD and resolution                                                                                  |
+| `GrafanaClient`                | struct | `src/client.rs:87`        | 31   | HTTP facade: `health`, `datasources`, `proxy_request`                                                                           |
+| `AuthProvider`                 | enum   | `src/auth.rs:6`           | 30   | Token / Basic / OAuth, built by `auth::from_profile`                                                                            |
+| `resolve_window`               | fn     | `src/timeutil.rs:4`       | 20   | `--since` / `--from` / `--to` -> UTC bounds                                                                                     |
+| `Datasource`                   | struct | `src/client.rs:9`         | 20   | `/api/datasources` row fed to `datasource::resolve`                                                                             |
+| `Query`                        | enum   | `src/commands/mod.rs:69`  | 18   | clap subcommands that fan out; `Query::resolve` fixes the window once, `Resolved::run` delegates to each family's `run`         |
+| `QueryWindow`                  | struct | `src/commands/mod.rs:28`  | 15   | clap `Args`: window + `--datasource`, flattened into query subcommands                                                          |
+| `resolve_profiles`             | fn     | `src/fanout.rs:8`         | 9    | decides which profiles run                                                                                                      |
+| `emit_json_error`, `exit_code` | fn     | `src/error.rs:86`, `:110` | 9, 9 | the error contract                                                                                                              |
+| `dispatch`                     | fn     | `src/app.rs:39`           | 1    | config -> profiles -> overrides -> `Query::resolve` -> `BaseUrl::parse` -> auth -> client -> `Resolved::run` (fanout) -> render |
 
 ## CONVENTIONS
 
@@ -74,7 +74,7 @@ Refs = ast-grep AST-node references across `src/` and `tests/`, definition exclu
 - Clap types live in the lib beside the code that consumes them (`*Cmd` / `*Args` in `commands/`, `QueryWindow`, `datasource::Kind`, `OutputMode`); the bin keeps only `Cli`, `Commands` and `Shell`. Clap-derived items take `//` comments, never `///`: clap turns doc comments into help text.
 - Lib code never prints data: commands return `CommandOutput` and the bin renders it. Diagnostics go to stderr.
 - Fallible lib code returns `crate::Result<T>` with the thiserror `Error`; the variant decides the JSON `kind` and the exit code. `anyhow` is in Cargo.toml but unused; don't introduce it.
-- Bad user input is `Error::Config` (exit 2); transport failures are `Transport` (kind `io`, reqwest's error kept as `source`), non-2xx replies `Http`, 2xx replies gcli cannot use (not JSON, wrong shape) `Response`, other I/O `Io`, bad URLs `Url` (all exit 1).
+- Bad user input is `Error::Config` (exit 2); transport failures are `Transport` (kind `io`, reqwest's error kept as `source`), non-2xx replies `Http`, 2xx replies gcli cannot use (not JSON, wrong shape) `Response`, other I/O `Io`, bad profile urls `Url` (`client::BaseUrl::parse`: absolute http/https only, checked in `profile add` and before the client is built) (all exit 1).
 - Deterministic output: `BTreeMap` for profiles and labels, explicit sorts before rendering.
 - `config.toml` and `tokens.json` are written only through `secret_file::write_secret`: a fresh 0600 sibling temp file, fsynced, then renamed over the target, so the file is never partial and never wider than 0600; missing config and cache directories are created 0700.
 - Unit tests sit in `#[cfg(test)]` modules and never touch process env: `Environment::from_process`, called once in `app::run`, is the only env read, and lib functions take the profile name, overrides and directories as arguments, so tests pass explicit values and tempdir paths.

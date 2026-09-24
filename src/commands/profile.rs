@@ -1,4 +1,5 @@
 use crate::Result;
+use crate::client::BaseUrl;
 use crate::commands::CommandOutput;
 use crate::config::{Config, OAuthConfig, Profile};
 use crate::error::Error;
@@ -58,6 +59,9 @@ pub struct AddArgs {
 }
 
 pub fn add(config: &mut Config, config_path: &Path, args: &AddArgs) -> Result<CommandOutput> {
+    // Checked first, so nothing is saved and no auth flag is validated for a
+    // url gcli could never request from.
+    BaseUrl::parse(&args.url)?;
     let profile = Profile {
         url: args.url.clone(),
         token: args.token.clone(),

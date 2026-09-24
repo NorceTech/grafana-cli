@@ -71,7 +71,7 @@ fn s1_profile_add_oauth_writes_oauth_config() {
             "add",
             "oauthfull",
             "--url",
-            "u",
+            "https://g.example.com",
             "--token-url",
             "https://idp/token",
             "--client-id",
@@ -192,8 +192,53 @@ fn s1_profile_errors() {
 
     // add without auth -> validation error via add_profile, exit 2, nothing saved
     let dir2 = tempfile::tempdir().unwrap();
-    let out = spawn_gcli(&["profile", "add", "bad", "--url", "u"], &config_env(&dir2));
+    let out = spawn_gcli(
+        &["profile", "add", "bad", "--url", "http://x"],
+        &config_env(&dir2),
+    );
     assert_eq!(out.status.code(), Some(2));
     assert_eq!(stderr_json(&out)["error"]["kind"], "config");
     assert!(!dir2.path().join("config.toml").exists());
+}
+
+// A profile url that is not an absolute http(s) address would only surface
+// later as a reqwest builder error; profile add rejects it as kind url, exit
+// 1, and saves nothing.
+#[test]
+fn s1_profile_add_rejects_a_url_without_a_scheme() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = spawn_gcli(
+        &[
+            "profile",
+            "add",
+            "bad",
+            "--url",
+            "grafana.example.com",
+            "--token",
+            "t",
+        ],
+        &config_env(&dir),
+    );
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "stdout={} stderr={stderr}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    assert_eq!(stderr_json(&out)["error"]["kind"], "url");
+    assert!(
+        stderr_json(&out)["error"]["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("grafana.example.com"),
+        "{stderr}"
+    );
+    assert!(!dir.path().join("config.toml").exists());
+    write_transcript(
+        "s1_profile_add_bad_url.txt",
+        "gcli profile add bad --url grafana.example.com --token t",
+        &out,
+    );
 }
