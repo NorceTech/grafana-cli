@@ -337,6 +337,32 @@ mod tests {
         assert_eq!(results[1].1.as_ref().unwrap(), "out:fast");
     }
 
+    // Concurrency is proven structurally, not by timing the binary: both
+    // profiles' futures rendezvous on one Barrier inside `run`. Serial
+    // execution deadlocks on the barrier and the timeout fails the test;
+    // concurrent execution lets both pass and finish.
+    #[tokio::test]
+    async fn run_executes_profiles_concurrently() {
+        let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(2));
+        let profiles = vec![
+            ("a".to_string(), profile("a")),
+            ("b".to_string(), profile("b")),
+        ];
+        let results = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            run(profiles, |_, _| {
+                let barrier = barrier.clone();
+                async move {
+                    barrier.wait().await;
+                    Ok(0u8)
+                }
+            }),
+        )
+        .await
+        .expect("profiles did not overlap: serial execution would deadlock on the barrier");
+        assert!(results.iter().all(|(_, r)| r.is_ok()));
+    }
+
     #[tokio::test]
     async fn run_carries_errors_per_profile() {
         let profiles = vec![

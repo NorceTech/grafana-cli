@@ -2,11 +2,8 @@ mod common;
 
 use common::*;
 use serde_json::{Value, json};
-use std::time::{Duration, Instant};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
-
-const PARALLELISM_BUDGET_MS: u128 = 450;
 
 fn two_profile_toml(url_a: &str, url_b: &str) -> String {
     format!(
@@ -253,36 +250,5 @@ async fn s8f_bad_window_fails_once_before_fanout() {
         "s8f_bad_window.txt",
         "gcli --profile a,b logs search '{x=\"y\"}' --since bogus",
         &out,
-    );
-}
-
-#[tokio::test]
-async fn s8e_fanout_runs_in_parallel() {
-    let m1 = MockServer::start().await;
-    let m2 = MockServer::start().await;
-    let delayed = || {
-        Mock::given(method("GET"))
-            .and(path("/api/health"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .set_delay(Duration::from_millis(250))
-                    .set_body_json(json!({"version": "11.4.0"})),
-            )
-    };
-    delayed().mount(&m1).await;
-    delayed().mount(&m2).await;
-    let config = fixture_config(&two_profile_toml(&m1.uri(), &m2.uri()));
-
-    let start = Instant::now();
-    let out = spawn_gcli(
-        &["--profile", "a,b", "health"],
-        &[("GCLI_CONFIG_DIR", config.path().to_str().unwrap())],
-    );
-    let elapsed = start.elapsed().as_millis();
-    assert_eq!(out.status.code(), Some(0));
-    assert!(
-        elapsed < PARALLELISM_BUDGET_MS,
-        "two 250ms profiles took {elapsed}ms; serial would exceed 500ms \
-         (budget {PARALLELISM_BUDGET_MS}ms)"
     );
 }
