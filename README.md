@@ -18,7 +18,15 @@ To run from source without installing:
 $ cargo run -q -- --help
 ```
 
-The repo ships a `flake.nix` with a development shell (`nix develop`) containing the Rust toolchain, rust-analyzer and formatting hooks. It is for working on the crate itself; the CLI builds with plain cargo.
+Nix users, also from a checkout of this repository:
+
+```console
+$ nix run .                  # build and run gcli
+$ nix build .#default        # build the package; the binary lands in result/bin
+$ nix profile install .      # install gcli into your Nix profile
+```
+
+The flake's development shell (`nix develop`) adds the Rust toolchain, rust-analyzer and formatting hooks, for working on the crate itself.
 
 ## Quickstart
 
@@ -83,7 +91,11 @@ The `GRAFANA_CLI_URL`, `GRAFANA_CLI_TOKEN`, `GRAFANA_CLI_USERNAME` and `GRAFANA_
 
 **Directories.** `GCLI_CONFIG_DIR` overrides where `config.toml` is read and written. `GCLI_CACHE_DIR` overrides where the OAuth token cache (`tokens.json`) lives; the default is the platform cache directory (`~/.cache/grafana-cli` on Linux, `~/Library/Caches/grafana-cli` on macOS).
 
-**Security.** Prefer the `*_command` variants (`token_command`, `password_command`, `client_secret_command`) over plaintext secrets. The command runs at request time and its trimmed stdout becomes the secret, so credentials can come from a password manager, a file or an agent instead of the config file. A single-element command is a shell line run through `sh -c`, so `~` expansion and pipes work; an array of two or more elements is executed directly as argv, without a shell, so elements containing spaces (like `op://vault/Grafana Prod/token`) survive intact. Anywhere a secret is passed as a flag value — the global `--token` and `--password`, `profile add --token`/`--password`/`--client-secret`, `profile set-token --token` — a value of `-` instead reads the secret from stdin (trimmed, non-empty, never a prompt), keeping it out of `ps` output and shell history. Note that this also means anyone who can edit your config file can run arbitrary commands as you; that is by design and scoped to your own machine.
+**Security.** Prefer the `*_command` variants (`token_command`, `password_command`, `client_secret_command`) over plaintext secrets. The command runs at request time and its trimmed stdout becomes the secret, so credentials can come from a password manager, a file or an agent instead of the config file. A single-element command is a shell line run through `sh -c`, so `~` expansion and pipes work; an array of two or more elements is executed directly as argv, without a shell, so elements containing spaces (like `op://vault/Grafana Prod/token`) survive intact. Anywhere a secret is passed as a flag value (the global `--token` and `--password`, `profile add --token`/`--password`/`--client-secret`, `profile set-token --token`), a value of `-` instead reads the secret from stdin (trimmed, non-empty, never a prompt), keeping it out of `ps` output and shell history. Note that this also means anyone who can edit your config file can run arbitrary commands as you; that is by design and scoped to your own machine.
+
+**Secret files.** `config.toml` and `tokens.json` are written through one helper: a fresh 0600 temp file next to the target, fsynced, then renamed over it. A write is never partial and the file is never wider than 0600; missing config and cache directories are created 0700.
+
+**Proxies.** Outbound requests honor the standard proxy environment variables (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`). Operating-system proxy settings are not read.
 
 ## Profiles
 
@@ -94,7 +106,6 @@ Usage: gcli profile add [OPTIONS] --url <URL> <NAME>
 Arguments:
   <NAME>
 
-Options:
 Options:
       --profile <NAMES>
           Comma-separated profile names
@@ -210,7 +221,7 @@ Options:
 
 Every command accepts the same global flags, before or after the subcommand. `--url`, `--token`, `--username`, `--password` override the active profile for that one invocation.
 
-`--timeout <DURATION>` bounds every request (default `60s`; humantime syntax like `30s`, `2m` or `500ms`). Connecting must start within 10 seconds, and the server may not fall silent for longer than the timeout — a slow but steadily streaming response still completes. A request that gives up is an `io` error (exit 1); an unparsable duration is a `config` error (exit 2).
+`--timeout <DURATION>` bounds every request (default `60s`; humantime syntax like `30s`, `2m` or `500ms`), including every poll of a `--follow` run and every `*_command` secret helper. Connecting must start within 10 seconds, and the server may not fall silent for longer than the timeout, so a slow but steadily streaming response still completes. A request that gives up is an `io` error (exit 1); an unparsable duration is a `config` error (exit 2).
 
 ### Time windows
 
@@ -220,6 +231,8 @@ Commands that take a time window accept either a relative `--since` or an absolu
 - `--since 30s|5m|2h|1d|1w`: human durations, counted back from now
 - `--from 2026-08-28T14:00:00Z`: RFC3339 start; `--to` defaults to now
 - `--to` requires `--from`; combining `--since` with `--from`/`--to` is a config error
+
+The window is resolved once per invocation, before any profile runs: a bad window is one `config` error, and every selected profile queries the same bounds.
 
 ### Datasource selection
 
@@ -238,13 +251,20 @@ $ gcli health
 
 `Usage: gcli datasources [OPTIONS]`
 
-Flags: `--type loki|prometheus|tempo` to filter.
+Flags: `--type loki|prometheus|tempo` to filter, `--check` to health-check each listed datasource.
 
 ```console
 $ gcli datasources
 [{"isDefault":true,"name":"Loki main","type":"loki","uid":"u-loki","url":"http://loki"},{"isDefault":false,"name":"Prom","type":"prometheus","uid":"u-prom","url":"http://prom"},{"isDefault":false,"name":"Tempo","type":"tempo","uid":"u-tempo","url":"http://tempo"}]
 $ gcli datasources --type loki
 [{"isDefault":true,"name":"Loki main","type":"loki","uid":"u-loki","url":"http://loki"}]
+```
+
+`--check` asks Grafana's per-datasource health endpoint about each listed datasource and adds `health` and `healthMessage` to every JSON record (table mode: `health` and `message` columns). A datasource type without health support answers 4xx/5xx, which shows as `"health":"ERROR"` with the error text as the message; one failing check never fails the command.
+
+```console
+$ gcli datasources --type prometheus --check
+[{"health":"OK","healthMessage":"Successfully queried the Prometheus data source.","isDefault":false,"name":"Prom","type":"prometheus","uid":"u-prom","url":"http://prom"}]
 ```
 
 ### logs search
@@ -270,11 +290,16 @@ Options:
       --direction <DIRECTION>    [default: backward] [possible values: forward, backward]
       --username <USERNAME>
       --password <PASSWORD>
+      --step <DURATION>
+  -f, --follow
       --timeout <DURATION>       Request timeout, e.g. 30s, 2m or 500ms [default: 60s]
+      --interval <DURATION>      [default: 2s]
   -h, --help                     Print help
 ```
 
 The query is LogQL. `--limit` defaults to 100 entries; `--direction` defaults to `backward` (newest first).
+
+A log query prints JSONL, one object per line:
 
 ```console
 $ gcli logs search '{job=~"api|web"}' --from 2026-08-28T14:00:00Z --to 2026-08-28T15:00:00Z
@@ -301,17 +326,39 @@ $ gcli logs search '{job=~"api|web"}' --from 2026-08-28T14:00:00Z --to 2026-08-2
 +--------------------------+-----------+---------+
 ```
 
+A LogQL metric query (`count_over_time`, `rate`, ...) answers with Prometheus-shaped series, flattened to `{metric, value, ts}` records sorted by label string then timestamp. `--step` samples the query at whole seconds (`15s`, `1m`; at least `1s`, sub-second values are a config error); without it Loki picks its own default.
+
+```console
+$ gcli logs search 'sum by (job) (count_over_time({job="api"}[5m]))' --since 1h --step 1m
+[{"metric":{"job":"api"},"ts":1759372500,"value":"42"},{"metric":{"job":"api"},"ts":1759372800,"value":"45"}]
+```
+
+`--follow` (`-f`) keeps printing new entries as they arrive. The first batch is exactly what `logs search` prints for the window; then, every `--interval` (default `2s`), it polls from the newest printed nanosecond to now and prints only entries not printed yet. Output is always JSONL; `--output` is ignored. Follow streams from exactly one profile: selecting several (`--profile a,b`, `--all-profiles`) is a config error. SIGINT, SIGTERM or a closed stdout end the run with exit 0; a failed poll ends it with that error's JSON and its exit code.
+
+### logs instant
+
+`Usage: gcli logs instant [OPTIONS] <QUERY>`
+
+Evaluates a LogQL metric query at one instant: now by default, or at an RFC3339 timestamp with `--at`. The vector result is flattened like `metrics instant`, except timestamps are Loki's nanoseconds:
+
+```console
+$ gcli logs instant 'sum by (job) (count_over_time({job="api"}[5m]))'
+[{"metric":{"job":"api"},"ts":"1759372800000000000","value":"42"}]
+```
+
+A plain log query here is rejected by Loki with a plain-text 400 whose text becomes the error message.
+
 ### logs labels and logs label-values
 
 `Usage: gcli logs labels [OPTIONS]` and `Usage: gcli logs label-values [OPTIONS] <LABEL>`
 
-Both take the shared time window and `--datasource` flags. They always print a JSON array; `--output table` is ignored for these two.
+Both take the shared time window and `--datasource` flags. They always print a JSON array; `--output table` is ignored for these two. `--match <SELECTOR>` scopes the request to streams matching a LogQL selector:
 
 ```console
 $ gcli logs labels --from 2026-08-28T14:00:00Z --to 2026-08-28T15:00:00Z
 ["app","level"]
-$ gcli logs label-values app --from 2026-08-28T14:00:00Z --to 2026-08-28T15:00:00Z
-["web"]
+$ gcli logs label-values job --match '{job=~"api|web"}' --since 24h
+["api","web"]
 ```
 
 ### metrics instant and metrics range
@@ -329,25 +376,67 @@ $ gcli metrics range up --from 2026-08-28T14:00:00Z --to 2026-08-28T15:00:00Z
 [{"metric":{"job":"api"},"ts":1759372700,"value":"1"},{"metric":{"job":"api"},"ts":1759372800,"value":"2"},{"metric":{"job":"zeta"},"ts":1759372700,"value":"4"},{"metric":{"job":"zeta"},"ts":1759372800,"value":"5"}]
 ```
 
+### metrics labels, label-values, series and exemplars
+
+`Usage: gcli metrics labels [OPTIONS]`, `Usage: gcli metrics label-values [OPTIONS] <LABEL>`, `Usage: gcli metrics series [OPTIONS] --match <MATCHES>`, `Usage: gcli metrics exemplars [OPTIONS] <QUERY>`
+
+The series-metadata commands behind metric discovery. All four take the shared time window and `--datasource` flags. `--match` takes a PromQL selector, is repeatable, and `series` requires at least one. `labels` and `label-values` always print a JSON array; `--output table` is ignored for them.
+
+```console
+$ gcli metrics labels --since 24h
+["__name__","instance","job"]
+$ gcli metrics label-values job --match 'up' --since 24h
+["node"]
+$ gcli metrics series --match 'up' --since 24h
+[{"__name__":"up","instance":"node:9100","job":"node"}]
+```
+
+`series` prints label-set objects sorted by their label string. `exemplars` prints one `{metric, labels, value, ts}` record per exemplar, sorted by series then timestamp; `ts` keeps the upstream fractional-seconds number and `value` the upstream string. In table mode `series` renders one `series` column, and `exemplars` renders `metric`, `traceID`, `value`, `ts`, taking the trace id from the exemplar's `trace_id` (or `traceID`) label.
+
+```console
+$ gcli metrics exemplars 'http_request_duration_seconds_bucket' --since 6h
+[{"labels":{"trace_id":"5b8efff69803be10153f4ea8a3b5186c"},"metric":{"__name__":"http_request_duration_seconds_bucket","service":"api"},"ts":1759372800.25,"value":"0.2"}]
+```
+
 ### traces get and traces search
 
 `Usage: gcli traces get [OPTIONS] <TRACE_ID>` and `Usage: gcli traces search [OPTIONS] <QUERY>`
 
-Search queries are TraceQL; `--limit` defaults to 20. `traces get` passes Tempo's trace JSON (OpenTelemetry `batches`) through unchanged; `--output table` lists one row per span, ordered by start time.
+Search queries are TraceQL; `--limit` defaults to 20. `traces get` passes Tempo's trace JSON (OpenTelemetry `batches`) through unchanged; `--output table` lists one row per span, ordered by start time, with `status` the span's OTLP status code (`ok` or `error`, empty when unset).
 
 ```console
 $ gcli traces get abc123
-{"batches":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"cart"}}]},"scopeSpans":[{"scope":{"name":"db"},"spans":[{"endTimeUnixNano":"1759372800003000000","name":"SELECT items","spanId":"s2","startTimeUnixNano":"1759372800000500000","traceId":"abc123"}]}]},{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"checkout"}}]},"scopeSpans":[{"scope":{"name":"http"},"spans":[{"endTimeUnixNano":"1759372800001500000","name":"GET /cart","spanId":"s1","startTimeUnixNano":"1759372800000000000","traceId":"abc123"}]}]}]}
+{"batches":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"cart"}}]},"scopeSpans":[{"scope":{"name":"db"},"spans":[{"endTimeUnixNano":"1759372800003000000","name":"SELECT items","spanId":"s2","startTimeUnixNano":"1759372800000500000","status":{"code":"STATUS_CODE_ERROR"},"traceId":"abc123"}]}]},{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"checkout"}}]},"scopeSpans":[{"scope":{"name":"http"},"spans":[{"endTimeUnixNano":"1759372800001500000","name":"GET /cart","spanId":"s1","startTimeUnixNano":"1759372800000000000","traceId":"abc123"}]}]}]}
 $ gcli traces get abc123 --output table
-+----------+--------------+----------------+
-| service  | name         | durationMillis |
-+==========================================+
-| checkout | GET /cart    | 1.5            |
-|----------+--------------+----------------|
-| cart     | SELECT items | 2.5            |
-+----------+--------------+----------------+
++----------+--------------+--------+----------------+
+| service  | name         | status | durationMillis |
++===================================================+
+| checkout | GET /cart    |        | 1.5            |
+|----------+--------------+--------+----------------|
+| cart     | SELECT items | error  | 2.5            |
++----------+--------------+--------+----------------+
 $ gcli traces search '{ resource.service.name = "checkout" }' --from 2026-08-28T14:00:00Z --to 2026-08-28T15:00:00Z --limit 5
 [{"durationMs":42,"rootServiceName":"checkout","rootTraceName":"GET /cart","start":"2025-10-02T02:40:00.000Z","traceID":"t1"},{"durationMs":"7","rootServiceName":"api","rootTraceName":"POST /order","start":"2025-10-02T02:40:00.500Z","traceID":"t2"}]
+```
+
+### traces tags and traces tag-values
+
+`Usage: gcli traces tags [OPTIONS]` and `Usage: gcli traces tag-values [OPTIONS] <TAG>`
+
+The discovery half of TraceQL. Both take the shared time window and `--datasource` flags; `tags` also takes `--scope resource|span|intrinsic|event|link|instrumentation` to filter.
+
+`traces tags` lists every tag under its TraceQL-ready name, qualified by its scope (`resource.service.name`, `span.http.method`) except intrinsics, which TraceQL addresses bare (`status`, `duration`), sorted and de-duplicated. Like `logs labels`, the output is a JSON array in every mode.
+
+```console
+$ gcli traces tags --since 6h
+["duration","name","resource.service.name","span.http.method","status"]
+```
+
+`traces tag-values` lists a tag's values as typed `{type, value}` objects, sorted by type then value; the type says how to quote the value in TraceQL (strings take quotes, ints and durations don't). Table mode renders `type` and `value` columns.
+
+```console
+$ gcli traces tag-values resource.service.name --since 6h
+[{"type":"string","value":"api"},{"type":"string","value":"checkout"}]
 ```
 
 ## Output modes
@@ -356,12 +445,13 @@ $ gcli traces search '{ resource.service.name = "checkout" }' --from 2026-08-28T
 
 JSON contracts, stable for machine consumption:
 
-- `logs search` prints JSONL: one object per line with the fields `profile`, `datasource`, `ts`, `labels`, `line`.
-- `logs labels` and `logs label-values` print a JSON array.
-- Everything else prints a single JSON value per line.
+- `logs search` with a log query prints JSONL: one object per line with the fields `profile`, `datasource`, `ts`, `labels`, `line`. With a LogQL metric query it prints one JSON array of `{metric, value, ts}` records.
+- `logs labels`, `logs label-values` and `traces tags` print a JSON array; `--output table` is ignored for them.
+- Everything else prints a single JSON value per line (most query results are one JSON array).
 - With more than one profile (see below), JSON output is wrapped one line per profile: `{"data":...,"profile":"prod"}`. Log records are already tagged with `profile`, so they stay as plain JSONL.
 - Table mode renders comfy-table output; with more than one profile, each block is preceded by a `profile: <name>` line.
 - Profile management commands (`add`, `use`, `remove`, `set-token`) always print JSON, regardless of `--output`.
+- `logs search --follow` always prints JSONL, whatever `--output` says.
 
 Errors never touch stdout. See the next section.
 
@@ -378,8 +468,8 @@ The `error` object always has the four keys `profile`, `kind`, `status`, `messag
 Where `message` comes from for the kinds that talk to the instance:
 
 - `http`: a non-2xx reply. `message` is the upstream's own error text: the JSON `message` field (Grafana), else the JSON `error` field (Prometheus, Loki), else the response body as plain text (Loki and Tempo answer many errors in plain text), trimmed and cut to 500 characters. It is null only when the error response has an empty body.
-- `response`: a success status whose body gcli cannot use, either not JSON (an SSO proxy's HTML login page, say) or JSON of an unexpected shape. `status` is that reply's status; `message` says what was wrong, names the request path and content type, and quotes the start of the body.
-- `url`: the profile's url — set by `profile add`, `--url` or `GRAFANA_CLI_URL` — is not an absolute `http`/`https` address. `profile add` refuses to save it, and a query rejects it before contacting anything, so no credentials are spent.
+- An error of kind response: a success status whose body gcli cannot use, either not JSON (an SSO proxy's HTML login page, say) or JSON of an unexpected shape. `status` is that reply's status; `message` says what was wrong, names the request path and content type, and quotes the start of the body.
+- `url`: the profile's url (set by `profile add`, `--url` or `GRAFANA_CLI_URL`) is not an absolute `http`/`https` address. `profile add` refuses to save it, and a query rejects it before contacting anything, so no credentials are spent.
 - `io`: a request that got no complete reply. `message` names the request path followed by the chain of causes, so a refused connection, a DNS failure and an untrusted TLS certificate read differently.
 
 Exit codes:
@@ -390,7 +480,7 @@ Exit codes:
 | 1    | HTTP error, malformed response, invalid URL, I/O error. Also: a multi-profile run where all failed.           |
 | 2    | Config, auth or datasource resolution error (unknown profile, ambiguous datasource, bad time arguments, ...). |
 
-A bad time window (`--since`, `--from`, `--to`) fails before any profile runs: one `config` error and exit code 2, even when several profiles are selected.
+A bad time window (`--since`, `--from`, `--to`) fails before any profile runs: one `config` error and exit code 2, even when several profiles are selected. The same is true for arguments that become part of a request path, like a label name or a trace id.
 
 An explicit `--datasource` of another core type (a Loki datasource for a metrics query, say) is a `config` error naming both types, and nothing is queried. One of a plugin type, such as a Prometheus-compatible VictoriaMetrics or Amazon Managed Prometheus datasource, is queried anyway with a `note:` line on stderr.
 
@@ -414,7 +504,11 @@ $ gcli --profile prod,staging health
 {"error":{"kind":"http","message":"boom","profile":"staging","status":500}}
 ```
 
-The exit code is 0 if any profile succeeded, 1 only when every profile failed. An unknown `--profile` name never fans out; it is a single config error with exit code 2.
+The exit code is 0 if any profile succeeded, 1 only when every profile failed. An unknown `--profile` name never fans out; it is a single config error with exit code 2. The one exception to fanout is `logs search --follow`, which refuses to run over several profiles.
+
+## Agent skill
+
+The distributable skill for AI agents lives at `skills/gcli/SKILL.md`. Install it by copying or symlinking the `skills/gcli` directory into your agent's skills directory, for example `~/.agents/skills/gcli` or `~/.claude/skills/gcli`. It teaches the same contracts as this README (discovery workflow, output shapes, exit codes) in the form an agent loads on demand.
 
 ## Shell completions
 
@@ -439,18 +533,25 @@ This CLI is designed to be driven by tools like you. The guarantees:
 - **Stable error contract.** All errors are one JSON line on stderr with the fixed keys `profile`, `kind`, `status`, `message`. For `http` errors, `message` carries the upstream's own error text (a LogQL, PromQL or TraceQL parse error, say); it is null only when the response body was empty. `kind: "response"` means the instance answered with a success status but a body that is not the expected JSON (an SSO login page, for example); its `message` quotes the start of that body.
 - **Notes on stderr.** Besides the JSON error lines, stderr can carry plain-text `note: ...` lines that do not change the result, for example when `--datasource` names a plugin datasource instead of a core `loki`, `prometheus` or `tempo` one (gcli still queries it: Prometheus-compatible plugins such as VictoriaMetrics have their own type). Treat only the lines that parse as JSON as errors.
 - **Meaningful exit codes.** 0 ok (including partial multi-profile success), 1 upstream or transport failure (`http`, `response`, `io`, `url`), 2 bad invocation (config/auth/datasource).
-- **Auto JSON.** Piping the output selects JSON mode without extra flags, but prefer explicit `--output json` for determinism.
+- **Auto JSON.** Piping the output selects JSON mode without extra flags, but always pass `--output json` in scripts; it is the only way to be sure.
 - **Bounded and secret-safe.** Every request and `*_command` helper is bounded by `--timeout` (default 60s), and any secret flag accepts `-` to read the secret from stdin, so nothing hangs and no secret needs to appear in a process listing.
 
-Suggested discovery workflow, from unknown instance to first result:
+Suggested discovery workflow, from unknown instance to first result, across all three datasources:
 
 ```console
-$ gcli datasources
+$ gcli datasources --check
 $ gcli logs labels --since 24h
 $ gcli logs label-values job --since 24h
 $ gcli logs search '{job="api"}' --since 1h --limit 50 --output json | jq -c .
+$ gcli metrics labels --since 24h
+$ gcli metrics label-values __name__ --since 24h
+$ gcli metrics series --match '{job="api"}' --since 1h
 $ gcli metrics instant up
+$ gcli traces tags --since 6h
+$ gcli traces tag-values resource.service.name --since 6h
 $ gcli traces search '{ resource.service.name = "checkout" }' --since 6h --output json
 ```
+
+For unattended or long-running use, pass an explicit `--timeout`; it bounds every request, every `--follow` poll and every secret helper command.
 
 To survey several Grafana instances in one shot: `gcli --all-profiles --output json health`, then parse the `{"data":...,"profile":...}` lines; stderr tells you which profiles are unhealthy.
