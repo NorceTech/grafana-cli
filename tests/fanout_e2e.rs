@@ -26,6 +26,13 @@ async fn health_500(server: &MockServer) {
         .await;
 }
 
+fn loki_datasources_mock() -> Mock {
+    datasources_json(json!([{
+        "id": 1, "uid": "loki1", "name": "Loki", "type": "loki",
+        "url": "/loki", "isDefault": true
+    }]))
+}
+
 fn stderr_lines(out: &std::process::Output) -> Vec<Value> {
     String::from_utf8_lossy(&out.stderr)
         .lines()
@@ -259,6 +266,97 @@ async fn s8f_bad_window_fails_once_before_fanout() {
     write_transcript(
         "s8f_bad_window.txt",
         "gcli --profile a,b logs search '{x=\"y\"}' --since bogus",
+        &out,
+    );
+}
+
+// Table mode fans out as one block per profile, prefixed `profile: <name>`
+// in selection order.
+#[tokio::test]
+async fn s19_fanout_table_prefixes_each_block_with_its_profile() {
+    let m1 = MockServer::start().await;
+    let m2 = MockServer::start().await;
+    health_mock().expect(1).mount(&m1).await;
+    health_mock().expect(1).mount(&m2).await;
+    let config = fixture_config(&two_profile_toml(&m1.uri(), &m2.uri()));
+
+    let out = spawn_gcli(
+        &["--profile", "a,b", "health", "--output", "table"],
+        &[("GCLI_CONFIG_DIR", config.path().to_str().unwrap())],
+    );
+
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let (a, b) = (
+        stdout.find("profile: a").unwrap_or_default(),
+        stdout.find("profile: b").unwrap_or_default(),
+    );
+    assert!(a < b, "blocks out of order or missing: {stdout}");
+    assert!(stdout.contains("version"), "health table body: {stdout}");
+    assert!(!stdout.trim_start().starts_with('{'), "{stdout}");
+    m1.verify().await;
+    m2.verify().await;
+    write_transcript(
+        "s19_fanout_table.txt",
+        "gcli --profile a,b health --output table",
+        &out,
+    );
+}
+
+// Log records fan out as plain JSONL tagged with their profile: no
+// {"data":..,"profile":..} wrapper even with several profiles selected.
+#[tokio::test]
+async fn s20_fanout_logs_stay_plain_jsonl_tagged_with_their_profile() {
+    let m1 = MockServer::start().await;
+    let m2 = MockServer::start().await;
+    for server in [&m1, &m2] {
+        loki_datasources_mock().expect(1).mount(server).await;
+        Mock::given(method("GET"))
+            .and(path(
+                "/api/datasources/proxy/uid/loki1/loki/api/v1/query_range",
+            ))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "status": "success",
+                "data": {"resultType": "streams", "result": [
+                    {"stream": {"job": "api"},
+                     "values": [["1759372800000000000", "one line"]]}
+                ]}
+            })))
+            .expect(1)
+            .mount(server)
+            .await;
+    }
+    let config = fixture_config(&two_profile_toml(&m1.uri(), &m2.uri()));
+
+    let out = spawn_gcli(
+        &["--profile", "a,b", "logs", "search", "{job=\"api\"}"],
+        &[("GCLI_CONFIG_DIR", config.path().to_str().unwrap())],
+    );
+
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let records = stdout_lines(&out);
+    assert_eq!(records.len(), 2, "{records:?}");
+    for (record, profile) in records.iter().zip(["a", "b"]) {
+        assert_eq!(record["profile"], profile, "{record}");
+        assert_eq!(record["line"], "one line", "{record}");
+        assert_eq!(record["ts"], "2025-10-02T02:40:00.000Z", "{record}");
+        assert!(record.get("data").is_none(), "wrapped record: {record}");
+    }
+    m1.verify().await;
+    m2.verify().await;
+    write_transcript(
+        "s20_fanout_logs_jsonl.txt",
+        "gcli --profile a,b logs search '{job=\"api\"}'",
         &out,
     );
 }

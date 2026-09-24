@@ -6,17 +6,17 @@ Black-box integration suite: every test spawns the compiled `gcli` binary agains
 
 ## WHERE TO LOOK
 
-| Scenario                                                                                                                                                    | File                    | IDs              |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- | ---------------- |
-| profile add/list/use/set-token/remove, profile errors                                                                                                       | `config_cli.rs`         | s1               |
-| health; datasources (`--type`, table)                                                                                                                       | `health_datasources.rs` | s2, s3           |
-| logs search, labels, label-values; a path-traversing label rejected; out-of-range time windows                                                              | `logs.rs`               | s4, s5, s18      |
-| metrics instant/range, epoch wire format                                                                                                                    | `metrics.rs`            | s6               |
-| traces get/search/404; a path-traversing trace id rejected                                                                                                  | `traces.rs`             | s7               |
-| multi-profile fanout, exit codes, a bad window failing once; overrides rejected for several profiles (concurrency itself is a unit test in `src/fanout.rs`) | `fanout_e2e.rs`         | s8a-d,f, s17a-b  |
-| basic auth; OAuth fetch/reuse/expiry/401 retry, parallel cache, remove forgets token; env/flag overrides                                                    | `auth.rs`               | s9, s10, s13-s16 |
-| output modes, error JSON schema, help/version/completions                                                                                                   | `ux.rs`                 | s11-12           |
-| broken pipe exits 0 (real `bash -c` pipe to `head -c 1`)                                                                                                    | `pipe.rs`               | -                |
+| Scenario                                                                                                                                                                                                     | File                    | IDs                      |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------- | ------------------------ |
+| profile add/list/use/set-token/remove, profile errors                                                                                                                                                        | `config_cli.rs`         | s1                       |
+| health; datasources (`--type`, table)                                                                                                                                                                        | `health_datasources.rs` | s2, s3                   |
+| logs search, labels, label-values; a path-traversing label rejected; out-of-range time windows                                                                                                               | `logs.rs`               | s4, s5, s18              |
+| metrics instant/range, epoch wire format                                                                                                                                                                     | `metrics.rs`            | s6                       |
+| traces get/search/404; a path-traversing trace id rejected                                                                                                                                                   | `traces.rs`             | s7                       |
+| multi-profile fanout, exit codes, a bad window failing once; overrides rejected for several profiles; multi-profile table blocks and plain-JSONL logs (concurrency itself is a unit test in `src/fanout.rs`) | `fanout_e2e.rs`         | s8a-d,f, s17a-b, s19-s20 |
+| basic auth; OAuth fetch/reuse/expiry/401 retry, parallel cache, remove forgets token; env/flag overrides                                                                                                     | `auth.rs`               | s9, s10, s13-s16         |
+| output modes, error JSON schema, help/version/completions                                                                                                                                                    | `ux.rs`                 | s11-12                   |
+| broken pipe exits 0 (real `bash -c` pipe to `head -c 1`)                                                                                                                                                     | `pipe.rs`               | -                        |
 
 Shared harness, `common/mod.rs`:
 
