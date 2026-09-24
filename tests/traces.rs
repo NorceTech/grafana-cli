@@ -2,7 +2,7 @@ mod common;
 
 use common::*;
 use serde_json::{Value, json};
-use wiremock::matchers::{method, path, query_param};
+use wiremock::matchers::{method, path, query_param, query_param_is_missing};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const FROM: &str = "2026-08-28T14:00:00Z";
@@ -154,6 +154,52 @@ async fn s7_traces_search() {
     );
 }
 
+// The shape Tempo's `api/v2/search/tags` answers with: scopes out of
+// alphabetical order, a duplicated intrinsic tag to pin de-duplication.
+// Generic values only, never the captured instance's names.
+fn tags_body() -> Value {
+    json!({"scopes": [
+        {"name": "span", "tags": ["http.method", "db.name"]},
+        {"name": "resource", "tags": ["service.name", "deployment.environment"]},
+        {"name": "intrinsic", "tags": ["status", "duration", "name", "status"]},
+        {"name": "event", "tags": ["exception.type"]}
+    ], "metrics": {"inspectedBytes": "7414172"}})
+}
+
+// Scopes flattened to TraceQL names (bare intrinsics), sorted, de-duplicated.
+fn expected_tag_names() -> Value {
+    json!([
+        "duration",
+        "event.exception.type",
+        "name",
+        "resource.deployment.environment",
+        "resource.service.name",
+        "span.db.name",
+        "span.http.method",
+        "status"
+    ])
+}
+
+// The shape Tempo's `api/v2/search/tag/<tag>/values` answers with: typed
+// values out of order to pin CLI-side sorting.
+fn tag_values_body() -> Value {
+    json!({"tagValues": [
+        {"type": "string", "value": "checkout"},
+        {"type": "int", "value": "200"},
+        {"type": "string", "value": "cart"},
+        {"type": "keyword", "value": "api"}
+    ], "metrics": {"inspectedBytes": "2395279"}})
+}
+
+fn expected_tag_values() -> Value {
+    json!([
+        {"type": "int", "value": "200"},
+        {"type": "keyword", "value": "api"},
+        {"type": "string", "value": "cart"},
+        {"type": "string", "value": "checkout"}
+    ])
+}
+
 // Every `--since` window has sub-second bounds. Live Tempo rejects a fractional
 // start/end with 400 "invalid start: strconv.ParseInt", so the start is floored
 // and the end ceiled to keep the requested window covered.
@@ -300,6 +346,264 @@ async fn s7_traces_get_rejects_a_path_traversing_trace_id() {
         &out,
     );
 }
+
+// `traces tags` flattens every scope to TraceQL names, sorted and
+// de-duplicated, and sends no `scope` parameter when the flag is absent.
+#[tokio::test]
+async fn s31_traces_tags_flatten_sort_and_dedup() {
+    let (start, end) = (epoch_secs(FROM).to_string(), epoch_secs(TO).to_string());
+
+    let server = MockServer::start().await;
+    ds_mock().mount(&server).await;
+    Mock::given(method("GET"))
+        .and(path("/api/datasources/proxy/uid/tempo1/api/v2/search/tags"))
+        .and(query_param("start", start.as_str()))
+        .and(query_param("end", end.as_str()))
+        .and(query_param_is_missing("scope"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(tags_body()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let cfg = token_config(&server.uri());
+    let env = ("GCLI_CONFIG_DIR", cfg.path().to_str().unwrap());
+    let out = spawn_gcli(&["traces", "tags", "--from", FROM, "--to", TO], &[env]);
+
+    let stdout = assert_success(&out);
+    let names: Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(names, expected_tag_names(), "{stdout}");
+    server.verify().await;
+    write_transcript(
+        "s31_traces_tags.txt",
+        "gcli traces tags --from 2026-08-28T14:00:00Z --to 2026-08-28T15:00:00Z",
+        &out,
+    );
+}
+
+// `--scope` rides along as the `scope` query parameter and the reply's scopes
+// (here just one) still flatten with their own prefix.
+#[tokio::test]
+async fn s31_traces_tags_scope_filters_the_wire_parameter() {
+    let (start, end) = (epoch_secs(FROM).to_string(), epoch_secs(TO).to_string());
+
+    let server = MockServer::start().await;
+    ds_mock().mount(&server).await;
+    Mock::given(method("GET"))
+        .and(path("/api/datasources/proxy/uid/tempo1/api/v2/search/tags"))
+        .and(query_param("scope", "resource"))
+        .and(query_param("start", start.as_str()))
+        .and(query_param("end", end.as_str()))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "scopes": [{"name": "resource", "tags": ["service.name", "deployment.environment"]}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let cfg = token_config(&server.uri());
+    let env = ("GCLI_CONFIG_DIR", cfg.path().to_str().unwrap());
+    let out = spawn_gcli(
+        &[
+            "traces", "tags", "--scope", "resource", "--from", FROM, "--to", TO,
+        ],
+        &[env],
+    );
+
+    let stdout = assert_success(&out);
+    let names: Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(
+        names,
+        json!(["resource.deployment.environment", "resource.service.name"]),
+        "{stdout}"
+    );
+    server.verify().await;
+    write_transcript(
+        "s31_traces_tags_scope.txt",
+        "gcli traces tags --scope resource --from 2026-08-28T14:00:00Z --to 2026-08-28T15:00:00Z",
+        &out,
+    );
+}
+
+// Tag names are discovery output for building TraceQL queries, not rows to
+// scan: like logs labels, the JSON array is the output in every mode.
+#[tokio::test]
+async fn s31_traces_tags_stay_json_in_table_mode() {
+    let (start, end) = (epoch_secs(FROM).to_string(), epoch_secs(TO).to_string());
+
+    let server = MockServer::start().await;
+    ds_mock().mount(&server).await;
+    Mock::given(method("GET"))
+        .and(path("/api/datasources/proxy/uid/tempo1/api/v2/search/tags"))
+        .and(query_param("start", start.as_str()))
+        .and(query_param("end", end.as_str()))
+        .respond_with(ResponseTemplate::new(200).set_body_json(tags_body()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let cfg = token_config(&server.uri());
+    let env = ("GCLI_CONFIG_DIR", cfg.path().to_str().unwrap());
+    let out = spawn_gcli(
+        &[
+            "traces", "tags", "--from", FROM, "--to", TO, "--output", "table",
+        ],
+        &[env],
+    );
+
+    let stdout = assert_success(&out);
+    let names: Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(names, expected_tag_names(), "{stdout}");
+    server.verify().await;
+    write_transcript(
+        "s31_traces_tags_table_mode.txt",
+        "gcli traces tags --from 2026-08-28T14:00:00Z --to 2026-08-28T15:00:00Z --output table",
+        &out,
+    );
+}
+
+// Tag values keep their Tempo type beside the value: TraceQL quotes strings
+// but not ints or durations, so the pair is the output. Sorted by type, then
+// value, for stable output whatever the upstream order.
+#[tokio::test]
+async fn s31_traces_tag_values_typed_json_sorted() {
+    let (start, end) = (epoch_secs(FROM).to_string(), epoch_secs(TO).to_string());
+
+    let server = MockServer::start().await;
+    ds_mock().mount(&server).await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/api/datasources/proxy/uid/tempo1/api/v2/search/tag/resource.service.name/values",
+        ))
+        .and(query_param("start", start.as_str()))
+        .and(query_param("end", end.as_str()))
+        .respond_with(ResponseTemplate::new(200).set_body_json(tag_values_body()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let cfg = token_config(&server.uri());
+    let env = ("GCLI_CONFIG_DIR", cfg.path().to_str().unwrap());
+    let out = spawn_gcli(
+        &[
+            "traces",
+            "tag-values",
+            "resource.service.name",
+            "--from",
+            FROM,
+            "--to",
+            TO,
+        ],
+        &[env],
+    );
+
+    let stdout = assert_success(&out);
+    let values: Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(values, expected_tag_values(), "{stdout}");
+    server.verify().await;
+    write_transcript(
+        "s31_traces_tag_values.txt",
+        "gcli traces tag-values resource.service.name --from 2026-08-28T14:00:00Z --to 2026-08-28T15:00:00Z",
+        &out,
+    );
+}
+
+#[tokio::test]
+async fn s31_traces_tag_values_table_columns_type_and_value() {
+    let (start, end) = (epoch_secs(FROM).to_string(), epoch_secs(TO).to_string());
+
+    let server = MockServer::start().await;
+    ds_mock().mount(&server).await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/api/datasources/proxy/uid/tempo1/api/v2/search/tag/resource.service.name/values",
+        ))
+        .and(query_param("start", start.as_str()))
+        .and(query_param("end", end.as_str()))
+        .respond_with(ResponseTemplate::new(200).set_body_json(tag_values_body()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let cfg = token_config(&server.uri());
+    let env = ("GCLI_CONFIG_DIR", cfg.path().to_str().unwrap());
+    let out = spawn_gcli(
+        &[
+            "traces",
+            "tag-values",
+            "resource.service.name",
+            "--from",
+            FROM,
+            "--to",
+            TO,
+            "--output",
+            "table",
+        ],
+        &[env],
+    );
+
+    let stdout = assert_success(&out);
+    // comfy-table's first line is the top border; the header text is second.
+    let header = stdout.lines().nth(1).unwrap_or_default();
+    for header_cell in ["type", "value"] {
+        assert!(
+            header.contains(header_cell),
+            "{header_cell} missing: {stdout}"
+        );
+    }
+    for cell in ["string", "int", "keyword", "checkout", "200", "cart", "api"] {
+        assert!(stdout.contains(cell), "{cell} missing: {stdout}");
+    }
+    assert!(!stdout.trim_start().starts_with('['), "{stdout}");
+    server.verify().await;
+    write_transcript(
+        "s31_traces_tag_values_table.txt",
+        "gcli traces tag-values resource.service.name --from 2026-08-28T14:00:00Z --to 2026-08-28T15:00:00Z --output table",
+        &out,
+    );
+}
+
+// The tag becomes a path segment and reqwest resolves `..`, so an unfit tag
+// is a config error naming it and Grafana receives no request at all.
+#[tokio::test]
+async fn s31_traces_tag_values_rejects_unfit_tags() {
+    let server = MockServer::start().await;
+    ds_mock().mount(&server).await;
+
+    let cfg = token_config(&server.uri());
+    let env = ("GCLI_CONFIG_DIR", cfg.path().to_str().unwrap());
+    for tag in ["..", ".", "", "bad tag", "tag/../other", "t\u{e4}g", "tag?"] {
+        let out = spawn_gcli(&["traces", "tag-values", tag], &[env]);
+
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(
+            out.status.code(),
+            Some(2),
+            "tag '{tag}': stdout={} stderr={stderr}",
+            String::from_utf8_lossy(&out.stdout)
+        );
+        let error: Value = serde_json::from_str(stderr.trim()).expect("stderr JSON");
+        assert_eq!(error["error"]["kind"], "config", "tag '{tag}': {stderr}");
+        let message = error["error"]["message"].as_str().unwrap_or_default();
+        assert!(message.contains(tag), "tag '{tag}': {message}");
+    }
+    let requests: Vec<String> = server
+        .received_requests()
+        .await
+        .expect("request recording")
+        .iter()
+        .map(|request| request.url.to_string())
+        .collect();
+    assert!(
+        requests.is_empty(),
+        "requests reached Grafana: {requests:?}"
+    );
+    write_transcript(
+        "s31_traces_tag_values_invalid.txt",
+        "gcli traces tag-values ..",
+        &spawn_gcli(&["traces", "tag-values", ".."], &[env]),
+    );
+}
+
 // The span table renders OTLP status codes: error/ok between name and
 // duration, unset and missing status as an empty cell.
 #[tokio::test]

@@ -136,6 +136,9 @@ impl Query {
             Self::Metrics {
                 cmd: MetricsCmd::LabelValues(args),
             } => logs::validate_label_name(&args.label),
+            Self::Traces {
+                cmd: TracesCmd::TagValues(args),
+            } => traces::validate_tag(&args.tag),
             Self::Health
             | Self::Datasources(_)
             | Self::Logs {
@@ -150,7 +153,7 @@ impl Query {
                     | MetricsCmd::Exemplars(_),
             }
             | Self::Traces {
-                cmd: TracesCmd::Search(_),
+                cmd: TracesCmd::Search(_) | TracesCmd::Tags(_),
             } => Ok(()),
         }
     }
@@ -183,6 +186,12 @@ impl Query {
             } => Some(&args.window),
             Self::Traces {
                 cmd: TracesCmd::Search(args),
+            } => Some(&args.window),
+            Self::Traces {
+                cmd: TracesCmd::Tags(args),
+            } => Some(&args.window),
+            Self::Traces {
+                cmd: TracesCmd::TagValues(args),
             } => Some(&args.window),
             Self::Health
             | Self::Datasources(_)
