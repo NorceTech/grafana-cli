@@ -295,7 +295,7 @@ $ gcli logs label-values app --from 2026-08-28T14:00:00Z --to 2026-08-28T15:00:0
 
 `Usage: gcli metrics instant [OPTIONS] <QUERY>` and `Usage: gcli metrics range [OPTIONS] <QUERY>`
 
-Queries are PromQL. `metrics instant` evaluates now, or at an RFC3339 timestamp given with `--at`. `metrics range` evaluates over the time window; `--step` takes a duration like `15s` and defaults to `max(1, ceil(window_seconds / 1000))` seconds, i.e. roughly 1000 points across the window.
+Queries are PromQL. `metrics instant` evaluates now, or at an RFC3339 timestamp given with `--at`. `metrics range` evaluates over the time window; `--step` takes a duration like `15s` and defaults to `max(15, ceil(window_seconds / 1000))` seconds: the 15 s floor matches Grafana's coarsest scrape interval (a finer step only repeats the last stored sample), and the window-scaled part keeps roughly 1000 points across large windows.
 
 ```console
 $ gcli metrics instant up

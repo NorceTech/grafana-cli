@@ -87,9 +87,18 @@ pub fn to_epoch_secs(dt: DateTime<Utc>) -> f64 {
     dt.timestamp() as f64 + f64::from(dt.timestamp_subsec_nanos()) / 1e9
 }
 
+/// The default `metrics range` step: `max(15, ceil(window/1000))` seconds.
+/// Grafana stores at its scrape interval (15 s at the coarsest), so a finer
+/// step only repeats the last sample (a 15-minute `up` query at 1 s asked for
+/// 2.28 M samples); the window-scaled half keeps big windows near 1000 points.
 pub fn default_step_secs(start: DateTime<Utc>, end: DateTime<Utc>) -> u64 {
-    let window_secs = (end - start).num_seconds().max(0) as f64;
-    ((window_secs / 1000.0).ceil() as u64).max(1)
+    let window_secs = (end - start).num_seconds().max(0);
+    // ceil(window/1000) on the stable unsigned `div_ceil`; the `max(0)` keeps
+    // the conversion lossless, a negative window is just a zero one.
+    u64::try_from(window_secs)
+        .unwrap_or(0)
+        .div_ceil(1000)
+        .max(15)
 }
 
 #[cfg(test)]
@@ -235,13 +244,16 @@ mod tests {
     #[test]
     fn step_secs() {
         let t0 = DateTime::UNIX_EPOCH;
-        assert_eq!(default_step_secs(t0, t0 + Duration::seconds(1000)), 1);
-        assert_eq!(default_step_secs(t0, t0 + Duration::seconds(1500)), 2);
-        assert_eq!(default_step_secs(t0, t0), 1);
-        assert_eq!(default_step_secs(t0, t0 + Duration::seconds(1)), 1);
+        // Grafana floors at the 15 s scrape interval: a finer step only asks
+        // for repeated last samples.
+        assert_eq!(default_step_secs(t0, t0 + Duration::seconds(1000)), 15);
+        assert_eq!(default_step_secs(t0, t0 + Duration::seconds(1500)), 15);
+        assert_eq!(default_step_secs(t0, t0), 15);
+        assert_eq!(default_step_secs(t0, t0 + Duration::seconds(1)), 15);
         assert_eq!(
             default_step_secs(t0, t0 + Duration::seconds(9_999_999)),
             10000
         );
+        assert_eq!(default_step_secs(t0, t0 + Duration::seconds(20_000)), 20);
     }
 }
