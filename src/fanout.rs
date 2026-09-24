@@ -148,15 +148,11 @@ fn panic_message(err: tokio::task::JoinError) -> String {
     }
 }
 
-pub fn aggregate_exit_code<T>(results: &[(&String, &Result<T>)]) -> i32 {
+pub fn aggregate_exit_code<T>(results: &[(String, Result<T>)]) -> i32 {
     if results.is_empty() {
         return 0;
     }
-    if results.iter().all(|(_, r)| r.is_err()) {
-        1
-    } else {
-        0
-    }
+    i32::from(results.iter().all(|(_, r)| r.is_err()))
 }
 
 #[cfg(test)]
@@ -399,15 +395,24 @@ mod tests {
 
     #[test]
     fn aggregate_exit_codes() {
-        let ok: Result<u8> = Ok(1);
-        let err = Err(Error::Config {
-            message: "x".into(),
-        });
-        let a = "a".to_string();
-        let b = "b".to_string();
-        assert_eq!(aggregate_exit_code(&[(&a, &ok), (&b, &ok)]), 0);
-        assert_eq!(aggregate_exit_code(&[(&a, &ok), (&b, &err)]), 0);
-        assert_eq!(aggregate_exit_code(&[(&a, &err), (&b, &err)]), 1);
+        let ok = || Ok::<u8, Error>(1);
+        let err = || {
+            Err(Error::Config {
+                message: "x".into(),
+            })
+        };
+        assert_eq!(
+            aggregate_exit_code(&[("a".into(), ok()), ("b".into(), ok())]),
+            0
+        );
+        assert_eq!(
+            aggregate_exit_code(&[("a".into(), ok()), ("b".into(), err())]),
+            0
+        );
+        assert_eq!(
+            aggregate_exit_code(&[("a".into(), err()), ("b".into(), err())]),
+            1
+        );
         assert_eq!(aggregate_exit_code::<u8>(&[]), 0);
     }
 }
