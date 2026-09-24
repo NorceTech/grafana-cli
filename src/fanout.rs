@@ -1,6 +1,8 @@
 use crate::config::{Config, Profile};
 use crate::environment::ProfileOverrides;
 use crate::{Error, Result};
+use std::collections::HashMap;
+use tokio::task::Id;
 
 /// The profiles to run, as stored: `--profile a,b` (order kept), else
 /// `--all-profiles` (sorted), else the active profile (`env_profile`, then
@@ -97,31 +99,53 @@ where
     let total = profiles.len();
     let mut slots: Vec<Option<(String, Result<T>)>> = (0..total).map(|_| None).collect();
     let mut set = tokio::task::JoinSet::new();
+    // Every spawn's task id maps back to its slot and profile name, so a task
+    // that panics can fill in its own name instead of an empty one.
+    let mut by_id: HashMap<Id, (usize, String)> = HashMap::with_capacity(total);
     for (index, (name, profile)) in profiles.into_iter().enumerate() {
         let fut = f(name.clone(), profile);
-        set.spawn(async move { (index, name, fut.await) });
+        let task_name = name.clone();
+        let spawned = set.spawn(async move { (index, task_name, fut.await) });
+        by_id.insert(spawned.id(), (index, name));
     }
-    let mut panics: Vec<String> = Vec::new();
     while let Some(joined) = set.join_next().await {
         match joined {
             Ok((index, name, result)) => slots[index] = Some((name, result)),
-            Err(e) => panics.push(e.to_string()),
+            Err(e) => {
+                // `join_next` yields every spawned task exactly once, panicked
+                // or not, so the id is always one we recorded.
+                let (index, name) = by_id.remove(&e.id()).expect("joined task was spawned here");
+                slots[index] = Some((
+                    name,
+                    Err(Error::Io(std::io::Error::other(format!(
+                        "profile task failed: {}",
+                        panic_message(e)
+                    )))),
+                ));
+            }
         }
     }
     slots
         .into_iter()
-        .map(|slot| {
-            slot.unwrap_or_else(|| {
-                let note = panics.first().cloned().unwrap_or_else(|| "unknown".into());
-                (
-                    String::new(),
-                    Err(Error::Io(std::io::Error::other(format!(
-                        "profile task failed: {note}"
-                    )))),
-                )
-            })
-        })
+        .map(|slot| slot.expect("every joined task fills its slot"))
         .collect()
+}
+
+/// The text a task panicked with: `&str` and `String` payloads directly, any
+/// other payload via its Debug; a task that was cancelled instead reports the
+/// JoinError itself.
+fn panic_message(err: tokio::task::JoinError) -> String {
+    if !err.is_panic() {
+        return err.to_string();
+    }
+    let panic = err.into_panic();
+    if let Some(text) = panic.downcast_ref::<&str>() {
+        (*text).to_string()
+    } else if let Some(text) = panic.downcast_ref::<String>() {
+        text.clone()
+    } else {
+        format!("{panic:?}")
+    }
 }
 
 pub fn aggregate_exit_code<T>(results: &[(&String, &Result<T>)]) -> i32 {
@@ -335,6 +359,42 @@ mod tests {
         .await;
         assert!(results[0].1.is_ok());
         assert!(matches!(&results[1].1, Err(Error::Config { message }) if message == "nope"));
+    }
+
+    // A panicking task must not poison the others' slots: each missing
+    // result keeps its own profile name and its own panic text, so the error
+    // line can be attributed and two different panics stay distinguishable.
+    #[tokio::test]
+    async fn a_panicking_task_keeps_its_own_name_and_panic_text() {
+        let profiles = vec![
+            ("first".to_string(), profile("first")),
+            ("second".to_string(), profile("second")),
+            ("fine".to_string(), profile("fine")),
+        ];
+
+        let results = run(profiles, |name, _| async move {
+            match name.as_str() {
+                "first" => panic!("boom one"),
+                "second" => panic!("boom two"),
+                _ => Ok(1u8),
+            }
+        })
+        .await;
+
+        assert_eq!(results[2].0, "fine");
+        assert!(results[2].1.is_ok());
+        for (slot, name, text) in [
+            (&results[0], "first", "boom one"),
+            (&results[1], "second", "boom two"),
+        ] {
+            assert_eq!(slot.0, name, "wrong profile in slot: {:?}", slot.0);
+            let Err(Error::Io(e)) = &slot.1 else {
+                panic!("{name}: {:?}", slot.1)
+            };
+            let message = e.to_string();
+            assert!(message.contains("profile task failed"), "{message}");
+            assert!(message.contains(text), "{text} missing: {message}");
+        }
     }
 
     #[test]
