@@ -2,7 +2,7 @@ use crate::client::{Datasource, GrafanaClient, Reply};
 use crate::datasource::{self, Kind};
 use crate::output::{LogRecord, OutputMode};
 use crate::timeutil::resolve_window;
-use crate::{Error, Result};
+use crate::{Result, error::Error};
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 

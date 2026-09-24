@@ -1,5 +1,5 @@
 use crate::client::Datasource;
-use crate::{Error, Result};
+use crate::{Result, error::Error};
 use clap::ValueEnum;
 
 // The datasource types gcli queries; also the values of `datasources --type`.
@@ -97,9 +97,8 @@ pub fn resolve<'a>(
 mod tests {
     use super::*;
 
-    fn ds(id: i64, uid: &str, name: &str, ds_type: &str, is_default: bool) -> Datasource {
+    fn ds(uid: &str, name: &str, ds_type: &str, is_default: bool) -> Datasource {
         Datasource {
-            id,
             uid: uid.into(),
             name: name.into(),
             r#type: ds_type.into(),
@@ -110,10 +109,10 @@ mod tests {
 
     fn fixtures() -> Vec<Datasource> {
         vec![
-            ds(1, "u-loki", "Loki main", "loki", true),
-            ds(2, "u-loki2", "Loki spare", "loki", false),
-            ds(3, "u-prom", "Prom", "prometheus", false),
-            ds(4, "u-tempo", "Tempo", "tempo", false),
+            ds("u-loki", "Loki main", "loki", true),
+            ds("u-loki2", "Loki spare", "loki", false),
+            ds("u-prom", "Prom", "prometheus", false),
+            ds("u-tempo", "Tempo", "tempo", false),
         ]
     }
 
@@ -133,9 +132,9 @@ mod tests {
     #[test]
     fn multiple_without_single_default_is_ambiguous() {
         let all = vec![
-            ds(1, "u-loki", "Loki main", "loki", false),
-            ds(2, "u-loki2", "Loki spare", "loki", false),
-            ds(3, "u-prom", "Prom", "prometheus", true),
+            ds("u-loki", "Loki main", "loki", false),
+            ds("u-loki2", "Loki spare", "loki", false),
+            ds("u-prom", "Prom", "prometheus", true),
         ];
         let err = resolve(&all, Kind::Loki, None).unwrap_err();
         match err {
@@ -155,7 +154,7 @@ mod tests {
 
     #[test]
     fn two_defaults_is_ambiguous() {
-        let all = vec![ds(1, "a", "A", "loki", true), ds(2, "b", "B", "loki", true)];
+        let all = vec![ds("a", "A", "loki", true), ds("b", "B", "loki", true)];
         assert!(matches!(
             resolve(&all, Kind::Loki, None),
             Err(Error::AmbiguousDatasource { .. })
@@ -165,9 +164,9 @@ mod tests {
     #[test]
     fn ambiguous_lists_only_same_type_candidates() {
         let all = vec![
-            ds(1, "u-loki", "Loki main", "loki", false),
-            ds(2, "u-loki2", "Loki spare", "loki", false),
-            ds(3, "u-prom", "Prom", "prometheus", true),
+            ds("u-loki", "Loki main", "loki", false),
+            ds("u-loki2", "Loki spare", "loki", false),
+            ds("u-prom", "Prom", "prometheus", true),
         ];
         match resolve(&all, Kind::Loki, None).unwrap_err() {
             Error::AmbiguousDatasource { candidates, .. } => {
@@ -212,7 +211,7 @@ mod tests {
 
     #[test]
     fn check_type_passes_the_wanted_type_silently() {
-        let prom = ds(3, "u-prom", "Prom", "prometheus", false);
+        let prom = ds("u-prom", "Prom", "prometheus", false);
 
         let note = check_type(&prom, Kind::Prometheus).unwrap();
 
@@ -221,7 +220,7 @@ mod tests {
 
     #[test]
     fn check_type_rejects_another_core_type_naming_both() {
-        let loki = ds(1, "u-loki", "Loki main", "loki", true);
+        let loki = ds("u-loki", "Loki main", "loki", true);
 
         let err = check_type(&loki, Kind::Prometheus).unwrap_err();
 
@@ -235,7 +234,7 @@ mod tests {
     #[test]
     fn check_type_notes_a_plugin_type() {
         // Prometheus-compatible, but its own plugin type.
-        let vm = ds(5, "u-vm", "VM", "victoriametrics-metrics-datasource", false);
+        let vm = ds("u-vm", "VM", "victoriametrics-metrics-datasource", false);
 
         let note = check_type(&vm, Kind::Prometheus).unwrap().expect("a note");
 

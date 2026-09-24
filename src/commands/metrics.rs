@@ -1,9 +1,9 @@
-use crate::Error;
 use crate::Result;
 use crate::client::GrafanaClient;
 use crate::commands::prom;
 use crate::commands::{Bounds, CommandOutput, QueryWindow, Windowed, resolve_ds};
 use crate::datasource::Kind;
+use crate::error::Error;
 use crate::output::OutputMode;
 use crate::timeutil::{default_step_secs, to_epoch_secs};
 use chrono::{DateTime, Utc};

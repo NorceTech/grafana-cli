@@ -122,7 +122,10 @@ mod tests {
 
         let result = write_secret(&path, b"new");
 
-        assert!(matches!(result, Err(crate::Error::Io(_))), "{result:?}");
+        assert!(
+            matches!(result, Err(crate::error::Error::Io(_))),
+            "{result:?}"
+        );
         assert_eq!(names(dir.path()), ["secret"]);
     }
 

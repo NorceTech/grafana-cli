@@ -3,7 +3,7 @@ use crate::commands::{Bounds, CommandOutput, QueryWindow, Windowed, resolve_ds, 
 use crate::datasource::Kind;
 use crate::output::{LogRecord, OutputMode};
 use crate::timeutil::to_ns_string;
-use crate::{Error, Result};
+use crate::{Result, error::Error};
 use chrono::{DateTime, SecondsFormat};
 use serde::Deserialize;
 use serde_json::Value;

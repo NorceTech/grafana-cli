@@ -1,6 +1,6 @@
 use crate::config::{Config, Profile};
 use crate::environment::ProfileOverrides;
-use crate::{Error, Result};
+use crate::{Result, error::Error};
 use std::collections::HashMap;
 use tokio::task::Id;
 

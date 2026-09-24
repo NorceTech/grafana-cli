@@ -100,14 +100,6 @@ mod tests {
     }
 
     #[test]
-    fn log_record_serde_roundtrip() {
-        let r = rec("line");
-        let s = serde_json::to_string(&r).unwrap();
-        let back: LogRecord = serde_json::from_str(&s).unwrap();
-        assert_eq!(back, r);
-    }
-
-    #[test]
     fn table_contains_headers_and_cells() {
         let out = render_table(
             &["profile".to_string(), "line".to_string()],

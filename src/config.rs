@@ -1,5 +1,5 @@
 use crate::secret_file::write_secret;
-use crate::{Error, Result};
+use crate::{Result, error::Error};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -162,7 +162,7 @@ fn validate_auth(profile: &Profile) -> Result<()> {
     let basic_mode = profile.username.is_some()
         && (profile.password.is_some() || profile.password_command.is_some());
     let oauth_mode = profile.oauth.is_some();
-    match (token_mode as u8) + (basic_mode as u8) + (oauth_mode as u8) {
+    match u8::from(token_mode) + u8::from(basic_mode) + u8::from(oauth_mode) {
         1 => Ok(()),
         0 => Err(Error::Config {
             message: "profile needs exactly one auth mode: --token/--token-command, \

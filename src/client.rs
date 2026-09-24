@@ -1,13 +1,12 @@
 use crate::auth::{self, AuthProvider};
 use crate::error::clip;
-use crate::{Error, Result};
+use crate::{Result, error::Error};
 use reqwest::header::CONTENT_TYPE;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Datasource {
-    pub id: i64,
     pub uid: String,
     pub name: String,
     pub r#type: String,
@@ -82,6 +81,12 @@ impl BaseUrl {
         }
         Ok(Self(parsed.to_string().trim_end_matches('/').to_string()))
     }
+
+    /// The normalized url, for callers that validated it earlier and now
+    /// build a client from it.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 pub struct GrafanaClient {
@@ -91,12 +96,14 @@ pub struct GrafanaClient {
 }
 
 impl GrafanaClient {
-    pub fn new(base_url: BaseUrl, auth: AuthProvider, http: reqwest::Client) -> Self {
-        Self {
-            base_url,
+    /// `base_url` is validated by `BaseUrl::parse`: an unusable url is
+    /// `Error::Url` here, not a reqwest builder error at request time.
+    pub fn new(base_url: &str, auth: AuthProvider, http: reqwest::Client) -> Result<Self> {
+        Ok(Self {
+            base_url: BaseUrl::parse(base_url)?,
             auth,
             http,
-        }
+        })
     }
 
     pub async fn health(&self) -> Result<Value> {
@@ -209,11 +216,7 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn client(base: &str, auth: AuthProvider) -> GrafanaClient {
-        GrafanaClient::new(
-            BaseUrl::parse(base).expect("fixture url"),
-            auth,
-            reqwest::Client::new(),
-        )
+        GrafanaClient::new(base, auth, reqwest::Client::new()).expect("fixture url")
     }
 
     #[test]
@@ -505,7 +508,7 @@ mod tests {
 
         let auth = AuthProvider::OAuth(auth::OAuthSource {
             profile_name: "p".into(),
-            config: crate::OAuthConfig {
+            config: crate::config::OAuthConfig {
                 token_url: format!("{}/token", server.uri()),
                 client_id: "cid".into(),
                 client_secret: Some("sec".into()),
@@ -526,10 +529,10 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/api/datasources"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!([{
-                "id": 1, "uid": "u1", "name": "Loki", "type": "loki",
+                "uid": "u1", "name": "Loki", "type": "loki",
                 "url": "/loki", "isDefault": true
             }, {
-                "id": 2, "uid": "u2", "name": "Prom", "type": "prometheus",
+                "uid": "u2", "name": "Prom", "type": "prometheus",
                 "url": "/prom", "isDefault": false
             }])))
             .mount(&server)

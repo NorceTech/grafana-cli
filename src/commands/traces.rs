@@ -2,7 +2,7 @@ use crate::client::GrafanaClient;
 use crate::commands::{Bounds, CommandOutput, QueryWindow, Windowed, cell, resolve_ds};
 use crate::datasource::Kind;
 use crate::output::OutputMode;
-use crate::{Error, Result};
+use crate::{Result, error::Error};
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::{Value, json};
 

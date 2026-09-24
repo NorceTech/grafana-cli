@@ -136,7 +136,7 @@ pub(crate) fn matrix_rows(records: &[Value]) -> Vec<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Error;
+    use crate::error::Error;
 
     #[test]
     fn label_string_sorted_quoted() {

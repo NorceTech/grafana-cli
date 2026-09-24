@@ -17,7 +17,7 @@ grafana-cli/
 │   ├── app.rs         # [bin] Commands match; dispatch() runs a Query per profile
 │   ├── cli.rs         # [bin] clap root: global flags, Commands (flattens Query)
 │   ├── render.rs      # [bin] every stdout/stderr write, BrokenPipe, exit code
-│   ├── lib.rs         # lib `gcli_lib`: modules, flat re-exports
+│   ├── lib.rs         # lib `gcli_lib`: modules, Result alias, `Config` re-export
 │   ├── commands/      # one module per command family: clap types + run (own AGENTS.md)
 │   ├── client.rs      # GrafanaClient: auth headers, OAuth 401 retry, proxy GET
 │   ├── config.rs      # config.toml model, path, load/save, profile resolution
@@ -58,7 +58,7 @@ Refs = ast-grep AST-node references across `src/` and `tests/`, definition exclu
 | `CommandOutput`                | enum   | `src/commands/mod.rs:15`  | 64   | every command's result; `render.rs` matches on it                                                                               |
 | `OutputMode`                   | enum   | `src/output.rs:6`         | 53   | json/table, resolved once in `app::run`                                                                                         |
 | `Config`                       | struct | `src/config.rs:39`        | ~31  | config.toml model; profile CRUD and resolution                                                                                  |
-| `GrafanaClient`                | struct | `src/client.rs:87`        | 31   | HTTP facade: `health`, `datasources`, `proxy_request`                                                                           |
+| `GrafanaClient`                | struct | `src/client.rs:92`        | 31   | HTTP facade: `health`, `datasources`, `proxy_request`                                                                           |
 | `AuthProvider`                 | enum   | `src/auth/mod.rs`         | 30   | Token / Basic / OAuth, built by `auth::from_profile`                                                                            |
 | `resolve_window`               | fn     | `src/timeutil.rs:4`       | 20   | `--since` / `--from` / `--to` -> UTC bounds                                                                                     |
 | `Datasource`                   | struct | `src/client.rs:9`         | 20   | `/api/datasources` row fed to `datasource::resolve`                                                                             |

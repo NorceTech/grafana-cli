@@ -1,5 +1,5 @@
 use crate::secret_file::{create_private_dir, open_private, write_secret};
-use crate::{Error, OAuthConfig, Result};
+use crate::{Result, config::OAuthConfig, error::Error};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs::{File, OpenOptions};

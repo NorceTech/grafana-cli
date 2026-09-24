@@ -1,4 +1,4 @@
-use crate::{Error, Result};
+use crate::{Result, error::Error};
 use chrono::{DateTime, Duration, SecondsFormat, Utc};
 
 pub fn resolve_window(
