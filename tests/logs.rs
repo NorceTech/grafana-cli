@@ -669,6 +669,106 @@ async fn s31_logs_search_step_forwarded_in_seconds() {
     );
 }
 
+// logs instant: a LogQL metric query evaluated once, at --at (ns on the
+// wire, like every Loki time) or now without it; the vector result comes
+// back as {metric, value, ts} records exactly like metrics instant.
+#[tokio::test]
+async fn s32_logs_instant_vector_query_outputs_metric_records() {
+    let server = MockServer::start().await;
+    loki_datasources_mock().expect(1).mount(&server).await;
+    Mock::given(method("GET"))
+        .and(path("/api/datasources/proxy/uid/loki1/loki/api/v1/query"))
+        .and(query_param(
+            "query",
+            "sum by (job) (count_over_time({service=\"checkout\"}[5m]))",
+        ))
+        .and(query_param("time", ts_ns(TO).as_str()))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "status": "success",
+            "data": {
+                "resultType": "vector",
+                "result": [
+                    {"metric": {"job": "node"}, "value": [1790201485.5, "9"]},
+                    {"metric": {"job": "api"}, "value": [1790201485.5, "42"]}
+                ]
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = token_config(&server.uri());
+    let out = run_logs(
+        &config,
+        &[
+            "logs",
+            "instant",
+            "sum by (job) (count_over_time({service=\"checkout\"}[5m]))",
+            "--at",
+            TO,
+        ],
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let records: Value =
+        serde_json::from_str(String::from_utf8_lossy(&out.stdout).trim()).expect("JSON");
+    assert_eq!(
+        records,
+        json!([
+            {"metric": {"job": "node"}, "value": "9", "ts": 1790201485.5},
+            {"metric": {"job": "api"}, "value": "42", "ts": 1790201485.5}
+        ]),
+        "{records}"
+    );
+    server.verify().await;
+    write_transcript(
+        "s32_logs_instant_vector.txt",
+        "gcli logs instant 'sum by (job) (count_over_time({service=\"checkout\"}[5m]))' --at 2026-08-28T15:00:00Z",
+        &out,
+    );
+}
+
+// Loki rejects a log query at the instant endpoint with a plain-text 400;
+// that text must be the error message (kind http, exit 1), like the other
+// plain-text upstream errors.
+#[tokio::test]
+async fn s32_logs_instant_log_query_plain_text_400_surfaces_the_message() {
+    let server = MockServer::start().await;
+    loki_datasources_mock().expect(1).mount(&server).await;
+    Mock::given(method("GET"))
+        .and(path("/api/datasources/proxy/uid/loki1/loki/api/v1/query"))
+        .respond_with(ResponseTemplate::new(400).set_body_raw(
+            "log queries are not supported as an instant query type, please change your query to a range query type\n",
+            "text/plain",
+        ))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = token_config(&server.uri());
+    let out = run_logs(&config, &["logs", "instant", "{job=\"api\"}"]);
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "stderr: {stderr}");
+    let error: Value = serde_json::from_str(stderr.trim()).expect("stderr JSON");
+    assert_eq!(error["error"]["kind"], "http");
+    assert_eq!(error["error"]["status"], 400);
+    assert_eq!(
+        error["error"]["message"],
+        "log queries are not supported as an instant query type, please change your query to a range query type"
+    );
+    server.verify().await;
+    write_transcript(
+        "s32_logs_instant_log_query.txt",
+        "gcli logs instant '{job=\"api\"}'",
+        &out,
+    );
+}
+
 // A --since so long that chrono cannot subtract it must not panic the CLI:
 // one config error naming the duration, and no request.
 #[tokio::test]

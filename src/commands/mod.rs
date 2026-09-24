@@ -142,7 +142,7 @@ impl Query {
             Self::Health
             | Self::Datasources(_)
             | Self::Logs {
-                cmd: LogsCmd::Search(_) | LogsCmd::Labels { .. },
+                cmd: LogsCmd::Search(_) | LogsCmd::Labels { .. } | LogsCmd::Instant(_),
             }
             | Self::Metrics {
                 cmd:
@@ -195,6 +195,9 @@ impl Query {
             } => Some(&args.window),
             Self::Health
             | Self::Datasources(_)
+            | Self::Logs {
+                cmd: LogsCmd::Instant(_),
+            }
             | Self::Metrics {
                 cmd: MetricsCmd::Instant(_),
             }
