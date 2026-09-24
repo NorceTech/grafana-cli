@@ -1,4 +1,5 @@
 use crate::client::{Datasource, GrafanaClient, Reply};
+use crate::commands::prom;
 use crate::commands::{Bounds, CommandOutput, QueryWindow, Windowed, resolve_ds, success_data};
 use crate::datasource::Kind;
 use crate::output::{LogRecord, OutputMode};
@@ -32,6 +33,10 @@ pub struct SearchArgs {
     pub limit: u64,
     #[arg(long, value_enum, default_value = "backward")]
     pub direction: Direction,
+    // The sampling step of a LogQL metric query, in whole seconds; without
+    // it Loki picks a dynamic default.
+    #[arg(long, value_name = "DURATION")]
+    pub step: Option<String>,
 }
 
 #[derive(clap::ValueEnum, Clone, Copy, Debug)]
@@ -109,6 +114,26 @@ fn string_array(reply: &Reply) -> Result<Vec<String>> {
     Vec::<String>::deserialize(data).map_err(|e| reply.malformed(&format!("data: {e}")))
 }
 
+/// The step a LogQL metric query samples at, in whole seconds; `None` when
+/// no `--step` was given, so Loki picks its own default. The same contract
+/// as `metrics range`'s step: unparsable or sub-second is a config error.
+fn step_secs(step: Option<&str>) -> Result<Option<u64>> {
+    let Some(s) = step else {
+        return Ok(None);
+    };
+    let secs = humantime::parse_duration(s)
+        .map_err(|_| Error::Config {
+            message: format!("invalid step duration: '{s}'"),
+        })?
+        .as_secs();
+    if secs == 0 {
+        return Err(Error::Config {
+            message: format!("step '{s}' must be at least 1s"),
+        });
+    }
+    Ok(Some(secs))
+}
+
 pub async fn search(
     client: &GrafanaClient,
     profile: &str,
@@ -121,19 +146,36 @@ pub async fn search(
         bounds,
     };
     let (start, end, ds) = loki_context(client, window).await?;
-    let reply = client
-        .proxy_request(
-            &ds.uid,
-            "loki/api/v1/query_range",
-            &[
-                ("query", args.query.clone()),
-                ("start", start),
-                ("end", end),
-                ("limit", args.limit.to_string()),
-                ("direction", args.direction.as_str().to_string()),
-            ],
-        )
+    let mut pairs = vec![
+        ("query", args.query.clone()),
+        ("start", start),
+        ("end", end),
+        ("limit", args.limit.to_string()),
+        ("direction", args.direction.as_str().to_string()),
+    ];
+    if let Some(secs) = step_secs(args.step.as_deref())? {
+        pairs.push(("step", secs.to_string()));
+    }
+    let mut reply = client
+        .proxy_request(&ds.uid, "loki/api/v1/query_range", &pairs)
         .await?;
+    // A LogQL metric query answers resultType "matrix" with Prometheus-
+    // shaped series; flatten them exactly like `metrics range` does.
+    if reply
+        .body
+        .pointer("/data/resultType")
+        .and_then(Value::as_str)
+        == Some("matrix")
+    {
+        let records = prom::flatten_matrix(prom::prom_result(&mut reply, "matrix")?);
+        if mode == OutputMode::Table {
+            return Ok(CommandOutput::Table {
+                headers: ["metric", "timestamp", "value"].map(String::from).to_vec(),
+                rows: prom::matrix_rows(&records),
+            });
+        }
+        return Ok(CommandOutput::Json(Value::Array(records)));
+    }
     let records = log_records(&reply, profile, &ds.name)?;
     if mode == OutputMode::Table {
         let rows = records
@@ -277,6 +319,19 @@ mod tests {
             let result = validate_label_name(label);
 
             assert!(result.is_ok(), "{label}: {result:?}");
+        }
+    }
+
+    #[test]
+    fn step_is_whole_seconds_or_none_and_validated() {
+        assert_eq!(step_secs(None).unwrap(), None);
+        assert_eq!(step_secs(Some("5m")).unwrap(), Some(300));
+        assert_eq!(step_secs(Some("15s")).unwrap(), Some(15));
+        for bad in ["bogus", "0s", "500ms"] {
+            assert!(
+                matches!(step_secs(Some(bad)), Err(Error::Config { .. })),
+                "{bad}"
+            );
         }
     }
 

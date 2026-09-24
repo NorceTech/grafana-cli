@@ -516,6 +516,159 @@ async fn s4_logs_plain_text_error_is_the_message() {
     );
 }
 
+// A LogQL metric query: query_range answers resultType "matrix" with
+// Prometheus-shaped series (values as [epoch-seconds, string]); gcli flattens
+// them into {metric, value, ts} records sorted exactly like `metrics range`
+// (series by label string, samples by ts), even when the reply is unsorted.
+#[tokio::test]
+async fn s31_logs_search_matrix_query_outputs_metric_records() {
+    let (start_ns, end_ns) = window_ns(FROM, TO);
+    let server = MockServer::start().await;
+    loki_datasources_mock().expect(1).mount(&server).await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/api/datasources/proxy/uid/loki1/loki/api/v1/query_range",
+        ))
+        .and(query_param(
+            "query",
+            "sum by (job) (count_over_time({service=\"checkout\"}[5m]))",
+        ))
+        .and(query_param("start", start_ns.as_str()))
+        .and(query_param("end", end_ns.as_str()))
+        .and(query_param("direction", "backward"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "status": "success",
+            "data": {
+                "resultType": "matrix",
+                "result": [
+                    {"metric": {"job": "node"},
+                     "values": [[1790198400, "9"], [1790198100, "6"]]},
+                    {"metric": {"job": "api"},
+                     "values": [[1790198100, "3"], [1790198400, "4"]]}
+                ]
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = token_config(&server.uri());
+    let out = run_logs(
+        &config,
+        &[
+            "logs",
+            "search",
+            "sum by (job) (count_over_time({service=\"checkout\"}[5m]))",
+            "--from",
+            FROM,
+            "--to",
+            TO,
+        ],
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let records: Value =
+        serde_json::from_str(stdout.trim()).expect("matrix result is one JSON array");
+    assert_eq!(
+        records,
+        json!([
+            {"metric": {"job": "api"}, "value": "3", "ts": 1790198100},
+            {"metric": {"job": "api"}, "value": "4", "ts": 1790198400},
+            {"metric": {"job": "node"}, "value": "6", "ts": 1790198100},
+            {"metric": {"job": "node"}, "value": "9", "ts": 1790198400}
+        ]),
+        "{records}"
+    );
+    server.verify().await;
+    // Without --step no step parameter is sent: Loki picks a dynamic default.
+    let query_range: Vec<String> = server
+        .received_requests()
+        .await
+        .expect("request recording")
+        .into_iter()
+        .filter(|r| r.url.to_string().contains("query_range"))
+        .map(|r| r.url.to_string())
+        .collect();
+    assert_eq!(query_range.len(), 1, "{query_range:?}");
+    assert!(!query_range[0].contains("step="), "{}", query_range[0]);
+    write_transcript(
+        "s31_logs_search_matrix.txt",
+        "gcli logs search 'sum by (job) (count_over_time({service=\"checkout\"}[5m]))' --from 2026-08-28T14:00:00Z --to 2026-08-28T15:00:00Z",
+        &out,
+    );
+}
+
+// --step is forwarded as Loki's step parameter in whole seconds.
+#[tokio::test]
+async fn s31_logs_search_step_forwarded_in_seconds() {
+    let (start_ns, end_ns) = window_ns(FROM, TO);
+    let server = MockServer::start().await;
+    loki_datasources_mock().expect(1).mount(&server).await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/api/datasources/proxy/uid/loki1/loki/api/v1/query_range",
+        ))
+        .and(query_param("query", "rate({service=\"cart\"}[5m])"))
+        .and(query_param("start", start_ns.as_str()))
+        .and(query_param("end", end_ns.as_str()))
+        .and(query_param("step", "300"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "status": "success",
+            "data": {
+                "resultType": "matrix",
+                "result": [
+                    {"metric": {}, "values": [[1790198100, "0.5"], [1790198400, "0.7"]]}
+                ]
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = token_config(&server.uri());
+    let out = run_logs(
+        &config,
+        &[
+            "logs",
+            "search",
+            "rate({service=\"cart\"}[5m])",
+            "--from",
+            FROM,
+            "--to",
+            TO,
+            "--step",
+            "5m",
+        ],
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let records: Value =
+        serde_json::from_str(String::from_utf8_lossy(&out.stdout).trim()).expect("JSON");
+    assert_eq!(
+        records,
+        json!([
+            {"metric": {}, "value": "0.5", "ts": 1790198100},
+            {"metric": {}, "value": "0.7", "ts": 1790198400}
+        ]),
+        "{records}"
+    );
+    server.verify().await;
+    write_transcript(
+        "s31_logs_search_step.txt",
+        "gcli logs search 'rate({service=\"cart\"}[5m])' --from 2026-08-28T14:00:00Z --to 2026-08-28T15:00:00Z --step 5m",
+        &out,
+    );
+}
+
 // A --since so long that chrono cannot subtract it must not panic the CLI:
 // one config error naming the duration, and no request.
 #[tokio::test]
